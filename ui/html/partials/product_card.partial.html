@@ -1,0 +1,37 @@
+{{define "product_card.partial.html"}}
+<div class="group relative">
+    <div
+        class="aspect-h-1 aspect-w-1 w-full overflow-hidden rounded-md bg-gray-200 lg:aspect-none group-hover:opacity-75 lg:h-80"
+    >
+        <img
+            src="{{.ImageURL}}"
+            alt="{{.Name}}"
+            class="h-full w-full object-cover object-center lg:h-full lg:w-full"
+        />
+    </div>
+    <div class="mt-4 flex justify-between">
+        <div>
+            <h3 class="text-sm text-gray-700">
+                <a href="/product/{{.ID}}">
+                    <span aria-hidden="true" class="absolute inset-0"></span>
+                    {{.Name}}
+                </a>
+            </h3>
+            <p class="mt-1 text-sm text-gray-500">{{.Description}}</p>
+        </div>
+        <p class="text-sm font-medium text-gray-900">{{formatPrice .Price}}</p>
+    </div>
+    <!-- STOCK STATUS DISPLAY -->
+    <div class="mt-2">
+        {{if gt .TotalStock 10}}
+        <span class="text-sm text-green-600">In Stock</span>
+        {{else if and (gt .TotalStock 0) (le .TotalStock 10)}}
+        <span class="text-sm font-medium text-orange-600"
+            >Just a few left!</span
+        >
+        {{else}}
+        <span class="text-sm font-medium text-red-600">Out of Stock</span>
+        {{end}}
+    </div>
+</div>
+{{end}}

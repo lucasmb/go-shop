@@ -1,0 +1,68 @@
+{{define "main"}}
+<div class="bg-white">
+    <div class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <h1 class="text-3xl font-bold tracking-tight text-gray-900">Order Details</h1>
+        <div class="mt-2 border-b border-gray-200 pb-5 text-sm">
+            <p class="text-gray-500">Order #{{.Order.ID}} placed on <time datetime="{{.Order.CreatedAt.Format "2006-01-02"}}">{{.Order.CreatedAt.Format "January 2, 2006"}}</time></p>
+        </div>
+
+        <div class="mt-8">
+            <h2 class="sr-only">Products purchased</h2>
+
+            <div class="space-y-8">
+                {{range .Order.Items}}
+                <div class="border-b border-gray-200 pb-8 md:grid md:grid-cols-2 md:gap-x-6">
+                    <div>
+                        <div class="font-medium text-gray-900">{{.ProductName}}</div>
+                        <div class="mt-1 text-sm text-gray-500">
+                            {{if .VariantDescription.Valid}}
+                                <p>{{.VariantDescription.String}}</p>
+                            {{end}}
+                        </div>
+                    </div>
+                    <div class="mt-4 md:mt-0">
+                        <dl class="space-y-4 text-sm">
+                            <div class="flex justify-between">
+                                <dt class="text-gray-500">Price per item</dt>
+                                <dd class="font-medium text-gray-900">{{formatPrice .Price}}</dd>
+                            </div>
+                            <div class="flex justify-between">
+                                <dt class="text-gray-500">Quantity</dt>
+                                <dd class="font-medium text-gray-900">{{.Quantity}}</dd>
+                            </div>
+                            <div class="flex justify-between pt-4 border-t border-gray-200">
+                                <dt class="font-medium text-gray-900">Line Total</dt>
+                                <dd class="font-medium text-indigo-600">{{formatPrice (multiply .Price .Quantity)}}</dd>
+                            </div>
+                        </dl>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+
+            <!-- Order Summary -->
+            <div class="mt-8 sm:ml-auto sm:w-full sm:max-w-md">
+                <div class="rounded-lg bg-gray-50 px-4 py-6 sm:p-6">
+                    <h2 class="text-lg font-medium text-gray-900">Order summary</h2>
+                    <dl class="mt-6 space-y-4 text-sm">
+                         <div class="flex items-center justify-between">
+                            <dt class="text-gray-600">Status</dt>
+                            <dd class="font-medium text-gray-900">{{.Order.Status}}</dd>
+                        </div>
+                        {{if .Order.TrackingNumber.Valid}}
+                        <div class="flex items-center justify-between">
+                            <dt class="text-gray-600">Tracking</dt>
+                            <dd class="font-medium text-indigo-600"><a href="https://www.google.com/search?q={{.Order.TrackingNumber.String}}" target="_blank">{{.Order.TrackingNumber.String}}</a></dd>
+                        </div>
+                        {{end}}
+                        <div class="flex items-center justify-between border-t border-gray-200 pt-4">
+                            <dt class="text-base font-medium text-gray-900">Order total</dt>
+                            <dd class="text-base font-medium text-gray-900">{{formatPrice .Order.Total}}</dd>
+                        </div>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,32 @@
+{{define "main"}}
+<div class="text-center">
+    <svg
+        class="mx-auto h-12 w-12 text-green-500"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="1.5"
+        stroke="currentColor"
+    >
+        <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+    </svg>
+    <h1
+        class="mt-4 text-3xl font-bold tracking-tight text-gray-900 sm:text-5xl"
+    >
+        Order Successful!
+    </h1>
+    <p class="mt-6 text-base leading-7 text-gray-600">
+        Thank you for your purchase. A confirmation email is on its way.
+    </p>
+    <div class="mt-10 flex items-center justify-center gap-x-6">
+        <a
+            href="/"
+            class="rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+            >Go back home</a
+        >
+    </div>
+</div>
+{{end}}

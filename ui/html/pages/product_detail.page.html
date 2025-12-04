@@ -1,0 +1,194 @@
+{{define "main"}}
+<div class="bg-white">
+    <!--
+      Alpine.js Component State:
+      - productData: The raw JSON string from Go. We parse it once in init().
+      - basePrice: The product's base price in cents.
+      - selectedOptions: An object to hold the user's current selections, e.g., {Size: 'Medium', Color: 'Blue'}.
+      - currentSKU: The single SKU object that matches the current selection. Null if no match.
+    -->
+    <div
+        class="pt-6"
+        x-data="{
+             productData: null,
+             basePrice: {{.Product.Price}},
+             selectedOptions: {},
+             currentSKU: null,
+
+             /* init() is the entry point. It runs once when the component is loaded. */
+             init() {
+                 try {
+                    const rawJson = '{{.Product.VariantsJSON.String | js}}';
+                    if (rawJson) {
+                         this.productData = JSON.parse(rawJson);
+                    }
+                } catch (e) {
+                                   this.productData = null;
+                                   console.error('Failed to parse variant JSON:', e);
+                 }
+
+                 // Initialize selectedOptions with the first option of each group
+                 if (this.productData && this.productData.variant_groups) {
+                     this.productData.variant_groups.forEach(group => {
+                         this.selectedOptions[group.name] = group.options[0];
+                     });
+                 }
+
+                 // Perform the first update to find the initial SKU
+                 this.updateCurrentSKU();
+             },
+
+             /* updateCurrentSKU() is the core logic engine. It finds the matching SKU. */
+             updateCurrentSKU() {
+                 // Fallback for products with no variants
+                 if (!this.productData || !this.productData.skus) {
+                     this.currentSKU = { stock: {{.Product.Stock}}, priceModifier: 0, image: '{{.Product.ImageURL}}' };
+                     return;
+                 }
+
+                 // Find the SKU where all attributes match the user's selectedOptions
+                 this.currentSKU = this.productData.skus.find(sku => {
+                     let match = true;
+                     for (const key in this.selectedOptions) {
+                         if (sku.attributes[key] !== this.selectedOptions[key]) {
+                             match = false;
+                             break;
+                         }
+                     }
+                     return match;
+                 }) || null; // If no SKU matches (e.g., combo not for sale), set to null
+             },
+
+             /* Computed properties derive their values from the core state. */
+             get finalPrice() {
+                 return this.basePrice + (this.currentSKU ? this.currentSKU.priceModifier : 0);
+             },
+             get finalStock() {
+                 // If a combination is invalid (no SKU), it's out of stock.
+                 return this.currentSKU ? this.currentSKU.stock : 0;
+             },
+             get finalImage() {
+                 return this.currentSKU && this.currentSKU.image ? this.currentSKU.image : '{{.Product.ImageURL}}';
+             }
+         }"
+    >
+        <div
+            class="mx-auto max-w-2xl px-4 pb-16 sm:px-6 lg:grid lg:max-w-7xl lg:grid-cols-2 lg:grid-rows-[auto,auto,1fr] lg:gap-x-8 lg:px-8 lg:pb-24"
+        >
+            <!-- Product Image -->
+            <div class="lg:col-span-1 lg:border-r lg:border-gray-200 lg:pr-8">
+                <img
+                    :src="finalImage"
+                    alt="{{.Product.Name}}"
+                    class="h-full w-full object-cover object-center rounded-lg"
+                />
+            </div>
+
+            <!-- Product Info -->
+            <div class="mt-4 lg:row-span-3 lg:mt-0">
+                <h1
+                    class="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl"
+                >
+                    {{.Product.Name}}
+                </h1>
+                <div class="mt-2">
+                    <a
+                        href="/?category={{.Product.CategoryName}}"
+                        class="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+                        >{{.Product.CategoryName}}</a
+                    >
+                </div>
+
+                <!-- Dynamic Price Display -->
+                <p class="text-3xl tracking-tight text-gray-900 mt-4">
+                    <span x-text="formatPrice(finalPrice)"></span>
+                </p>
+
+                <!-- Description -->
+                <div class="mt-6">
+                    <h3 class="sr-only">Description</h3>
+                    <p class="text-base text-gray-900">
+                        {{.Product.Description}}
+                    </p>
+                </div>
+
+                <form
+                    class="mt-10"
+                    hx-post="/cart/add/{{.Product.ID}}"
+                    hx-swap="none"
+                >
+                    <!-- Variants Section -->
+                    <template x-if="productData && productData.variant_groups">
+                        <div class="space-y-10">
+                            <template
+                                x-for="group in productData.variant_groups"
+                                :key="group.name"
+                            >
+                                <div>
+                                    <div
+                                        class="flex items-center justify-between"
+                                    >
+                                        <h3
+                                            class="text-sm font-medium text-gray-900"
+                                            x-text="group.name"
+                                        ></h3>
+                                    </div>
+
+                                    <div
+                                        class="grid grid-cols-4 gap-4 sm:grid-cols-8 lg:grid-cols-4 mt-4"
+                                    >
+                                        <template
+                                            x-for="option in group.options"
+                                            :key="option"
+                                        >
+                                            <div>
+                                                <input
+                                                    type="radio"
+                                                    :id="'variant-' + group.name + '-' + option"
+                                                    :name="'variant_' + group.name"
+                                                    :value="option"
+                                                    x-model="selectedOptions[group.name]"
+                                                    @change="updateCurrentSKU()"
+                                                    class="sr-only"
+                                                />
+                                                <label
+                                                    :for="'variant-' + group.name + '-' + option"
+                                                    class="group relative flex items-center justify-center rounded-md border py-3 px-4 text-sm font-medium uppercase hover:bg-gray-50 focus:outline-none sm:flex-1 sm:py-6 cursor-pointer bg-white text-gray-900 shadow-sm"
+                                                    x-text="option"
+                                                >
+                                                </label>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- Stock Alert and Add to Cart Button -->
+                    <div class="mt-6">
+                        <template x-if="finalStock > 0 && finalStock <= 10"
+                            ><p class="text-sm font-medium text-orange-600">
+                                Just a few left!
+                            </p></template
+                        >
+                        <template x-if="finalStock <= 0"
+                            ><p class="text-sm font-medium text-red-600">
+                                Out of stock
+                            </p></template
+                        >
+                    </div>
+
+                    <button
+                        type="submit"
+                        :disabled="finalStock <= 0"
+                        class="mt-4 flex w-full items-center justify-center rounded-md border border-transparent bg-indigo-600 px-8 py-3 text-base font-medium text-white hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    >
+                        Add to bag
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

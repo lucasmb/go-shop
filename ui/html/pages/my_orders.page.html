@@ -1,0 +1,65 @@
+{{define "main"}}
+<div class="bg-white">
+    <div class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <div class="max-w-xl">
+            <h1 class="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">My Order History</h1>
+            <p class="mt-2 text-sm text-gray-500">Check the status of recent orders and discover similar products.</p>
+        </div>
+
+        <div class="mt-12 space-y-16 sm:mt-16">
+            {{range .Orders}}
+            <section>
+                <div class="space-y-8 md:flex md:items-start md:justify-between md:space-y-0">
+                    <!-- Order Header -->
+                    <div class="space-y-2 md:flex-1">
+                        <h2 class="text-lg font-medium text-gray-900">Order #{{.ID}}</h2>
+                        <div class="flex flex-col space-y-1 text-sm text-gray-600 sm:flex-row sm:space-x-4 sm:space-y-0">
+                            <p>Placed on <time datetime="{{.CreatedAt.Format "2006-01-02"}}">{{.CreatedAt.Format "January 2, 2006"}}</time></p>
+                            <p class="font-medium text-gray-900">Total: {{formatPrice .Total}}</p>
+                        </div>
+                    </div>
+
+                    <!-- Order Status -->
+                    <div class="flex items-start">
+                        <div class="ml-4 flex-shrink-0 sm:order-first sm:ml-0 sm:mr-4">
+                            <div class="rounded-lg bg-gray-100 p-2 ring-1 ring-inset ring-gray-200">
+                                <svg class="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div>
+                            <p class="font-medium text-gray-900">
+                                {{if eq .Status "pending"}}Processing{{end}}
+                                {{if eq .Status "paid"}}Confirmed{{end}}
+                                {{if eq .Status "shipped"}}Shipped{{end}}
+                            </p>
+                            <p class="mt-1 text-sm text-gray-500">
+                                {{if .TrackingNumber.Valid}}
+                                    Tracking: <a href="https://www.google.com/search?q={{.TrackingNumber.String}}" target="_blank" class="font-medium text-indigo-600 hover:text-indigo-500">{{.TrackingNumber.String}}</a>
+                                {{else}}
+                                    Awaiting shipment
+                                {{end}}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Order Items (hidden on small screens, shown on medium+) -->
+                <div class="-my-6 mt-6 hidden flow-root divide-y divide-gray-200 border-t border-gray-200 md:block">
+                    <!-- This is a placeholder for the item list,-->
+                </div>
+
+                <div class="mt-6">
+                    <a href="/my-orders/{{.ID}}" class="w-full rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 md:w-auto">
+                        View Order Details
+                    </a>
+                </div>
+            </section>
+            {{else}}
+                <p class="text-center text-gray-500">You haven't placed any orders yet.</p>
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,122 @@
+{{define "cart_table.partial.html"}}
+<div
+    id="cart-table"
+    class="overflow-x-auto"
+    hx-target="this"
+    hx-swap-oob="outerHTML"
+>
+    {{if gt .Cart.ItemCount 0}}
+    <table class="min-w-full divide-y divide-gray-300">
+        <thead>
+            <tr>
+                <th
+                    scope="col"
+                    class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-0"
+                >
+                    Product
+                </th>
+                <th
+                    scope="col"
+                    class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                >
+                    Price
+                </th>
+                <th
+                    scope="col"
+                    class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                >
+                    Quantity
+                </th>
+                <th
+                    scope="col"
+                    class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                >
+                    Total
+                </th>
+                <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-0">
+                    <span class="sr-only">Remove</span>
+                </th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+            {{range .Cart.Items}}
+            <tr>
+                <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-0">
+                    <div class="font-medium text-gray-900">
+                        {{.Product.Name}}
+                    </div>
+                    <div class="mt-1 text-gray-500">
+                        {{if .VariantDescription}}
+                        <p>{{.VariantDescription}}</p>
+                        {{end}}
+                    </div>
+                </td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    {{formatPrice .FinalPrice}}
+                </td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <input
+                        type="number"
+                        name="quantity"
+                        value="{{.Quantity}}"
+                        min="0"
+                        class="block w-20 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm"
+                        hx-post="/cart/update/{{.CompositeID}}"
+                        hx-trigger="change"
+                        hx-swap="none"
+                    />
+                </td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    {{formatPrice (multiply .FinalPrice .Quantity)}}
+                </td>
+                <td
+                    class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0"
+                >
+                    <button
+                        type="button"
+                        hx-delete="/cart/item/{{.CompositeID}}"
+                        hx-confirm="Are you sure you want to remove this item?"
+                        hx-swap="none"
+                        class="text-indigo-600 hover:text-indigo-900"
+                    >
+                        Remove
+                    </button>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+        <tfoot>
+            <tr>
+                <th
+                    scope="row"
+                    colspan="3"
+                    class="hidden pl-4 pr-3 pt-4 text-right text-sm font-semibold text-gray-900 sm:table-cell sm:pl-0"
+                >
+                    Grand Total
+                </th>
+                <td
+                    class="pl-3 pr-4 pt-4 text-left text-sm font-semibold text-gray-900 sm:pr-0"
+                >
+                    {{formatPrice .Cart.Total}}
+                </td>
+            </tr>
+        </tfoot>
+    </table>
+    <div class="mt-6 flex justify-end">
+        <a
+            href="/checkout"
+            class="rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+        >
+            Proceed to Checkout
+        </a>
+    </div>
+    {{else}}
+    <p class="text-center text-gray-500 py-8">Your cart is empty.</p>
+    <div class="mt-6 flex justify-center">
+        <a href="/" class="text-indigo-600 hover:text-indigo-500 font-semibold">
+            &larr; Continue Shopping
+        </a>
+    </div>
+    {{end}}
+</div>
+{{end}}

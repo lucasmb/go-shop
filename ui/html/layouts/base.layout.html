@@ -1,0 +1,167 @@
+{{define "base"}}
+<!doctype html>
+<html lang="en" class="h-full bg-gray-50">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Go-HTMX Store</title>
+        <!--<link rel="stylesheet" href="/static/css/style.css" />-->
+        <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    </head>
+    <!-- ACTIVATE THE EXTENSION ON THE BODY TAG -->
+    <body class="h-full" hx-ext="multi-swap">
+        <div class="min-h-full">
+            <nav class="bg-white shadow-sm">
+                <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                    <div class="flex h-16 justify-between">
+                        <div class="flex">
+                            <div class="flex flex-shrink-0 items-center">
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    class="h-8 w-auto text-indigo-600"
+                                    viewBox="0 0 24 24"
+                                    stroke-width="1.5"
+                                    stroke="currentColor"
+                                    fill="none"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                >
+                                    <path
+                                        stroke="none"
+                                        d="M0 0h24v24H0z"
+                                        fill="none"
+                                    />
+                                    <path
+                                        d="M10.09 4.01l.496 -.495a2.062 2.062 0 0 1 2.918 0l6.516 6.515a2.062 2.062 0 0 1 0 2.918l-7.986 7.986a2.062 2.062 0 0 1 -2.918 0l-6.516 -6.515a2.062 2.062 0 0 1 0 -2.918l7.986 -7.986"
+                                    />
+                                    <path d="M10.495 7.495l-3.99 3.99" />
+                                    <path d="M14 10.5l-4 4" />
+                                </svg>
+                            </div>
+                            <div class="ml-6 flex space-x-8">
+                                <a
+                                    href="/"
+                                    class="inline-flex items-center border-b-2 border-indigo-500 px-1 pt-1 text-sm font-medium text-gray-900"
+                                    >Home</a
+                                >
+                            </div>
+                        </div>
+                        <div class="ml-6 flex items-center space-x-4">
+                            {{template "cart_icon.partial.html" .}} {{if .User}}
+                            <span class="text-sm font-medium text-gray-700"
+                                >Hello, {{.User.Name}}</span
+                            >
+                            <a
+                                href="/my-orders"
+                                class="text-sm font-medium text-gray-700 hover:text-gray-800"
+                                >My Orders</a
+                            >
+                            {{if .User.IsAdmin}}
+                            <a
+                                href="/admin/orders"
+                                class="text-sm font-medium text-gray-700 hover:text-gray-800"
+                                >Admin</a
+                            >
+                            {{end}}
+                            <form
+                                hx-post="/logout"
+                                hx-trigger="submit"
+                                hx-target="body"
+                            >
+                                <button
+                                    type="submit"
+                                    class="text-sm font-medium text-gray-700 hover:text-gray-800"
+                                >
+                                    Logout
+                                </button>
+                            </form>
+                            {{else}}
+                            <a
+                                href="/login"
+                                class="text-sm font-medium text-gray-700 hover:text-gray-800"
+                                >Login</a
+                            >
+                            <a
+                                href="/register"
+                                class="text-sm font-medium text-gray-700 hover:text-gray-800"
+                                >Register</a
+                            >
+                            {{end}}
+                        </div>
+                    </div>
+                </div>
+            </nav>
+
+            <main class="py-10">
+                <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
+                    {{template "main" .}}
+                </div>
+            </main>
+            <!-- The toast container is now just a simple, empty div -->
+            <div
+                id="toast-container"
+                class="fixed top-5 right-5 z-50 w-full max-w-sm space-y-2"
+            ></div>
+        </div>
+
+        <!-- HTMX -->
+        <script src="/static/js/htmx.min.js"></script>
+        <script
+            defer
+            src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
+        ></script>
+        <!-- Payment Provider SDKs -->
+        <script src="https://js.stripe.com/v3/"></script>
+        <!--<script src="https://sdk.mercadopago.com/js/v2"></script>-->
+
+        <!-- SCRIPT BLOCK -->
+        <script>
+            document.body.addEventListener("showToast", function (e) {
+                try {
+                    const details =
+                        typeof e.detail === "string"
+                            ? JSON.parse(e.detail)
+                            : e.detail;
+
+                    const message =
+                        details.message || "An unknown error occurred.";
+                    const type = details.type || "success";
+                    const toastTemplate = document.createElement("template");
+                    const isError = type === "error";
+                    const iconSvg = isError
+                        ? `<svg class="h-6 w-6 text-red-400" ...>...</svg>` // (full svg path)
+                        : `<svg class="h-6 w-6 text-green-400" ...>...</svg>`; // (full svg path)
+
+                    toastTemplate.innerHTML = `
+              <div x-data="{ show: true }" x-init="setTimeout(() => show = false, 4000); setTimeout(() => $el.remove(), 4500)" x-show="show" x-transition ...>
+                <div class="p-4">
+                  <div class="flex items-start">
+                    <div class="flex-shrink-0">${iconSvg}</div>
+                    <div class="ml-3 w-0 flex-1 pt-0.5">
+                      <p class="text-sm font-medium text-gray-900">${isError ? "Error" : "Success!"}</p>
+                      <p class="mt-1 text-sm text-gray-500">${message}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `.trim();
+
+                    document
+                        .getElementById("toast-container")
+                        .appendChild(toastTemplate.content.firstChild);
+                } catch (e) {
+                    console.error("Failed to parse toast event details:", e);
+                    console.error("Raw event detail:", e.detail);
+                }
+            });
+
+            function formatPrice(priceInCents) {
+                return new Intl.NumberFormat("en-US", {
+                    style: "currency",
+                    currency: "USD",
+                }).format(priceInCents / 100);
+            }
+        </script>
+    </body>
+</html>
+
+{{end}}
