@@ -28,6 +28,7 @@ help: ## Show this help message
 .PHONY: run
 run: ## Run the web application
 	@echo ">> Starting application..."
+	@pnpm tailwindcss -i ./ui/static/css/input.css -o ./ui/static/css/main.css &
 	go run ./cmd/web
 
 .PHONY: tidy
@@ -83,5 +84,6 @@ db/console: ## Open a console to the SQLite database
 .PHONY: build
 build: ## Build the application binary
 	@echo ">> Building application binary..."
+	pnpm tailwindcss -i ./ui/static/css/input.css -o ./ui/static/css/main.css --minify
 	go build -o $(BINARY_NAME) ./cmd/web
 	@echo ">> Build complete: ./$(BINARY_NAME)"

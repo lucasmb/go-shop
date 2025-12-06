@@ -1,5 +1,9 @@
 
 .env
 go-shop
+ecommerce.db
+
 seed.sql
 TODO.txt
+
+node_modules

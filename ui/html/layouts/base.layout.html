@@ -4,17 +4,16 @@
     <head>
         <meta charset="UTF-8" />
         <title>Go-HTMX Store</title>
-        <!--<link rel="stylesheet" href="/static/css/style.css" />-->
-        <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+        <link href="/static/css/main.css" rel="stylesheet" />
     </head>
-    <!-- ACTIVATE THE EXTENSION ON THE BODY TAG -->
-    <body class="h-full" hx-ext="multi-swap">
+
+    <body class="h-full">
         <div class="min-h-full">
             <nav class="bg-white shadow-sm">
                 <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                     <div class="flex h-16 justify-between">
                         <div class="flex">
-                            <div class="flex flex-shrink-0 items-center">
+                            <div class="flex shrink-0 items-center">
                                 <svg
                                     xmlns="http://www.w3.org/2000/svg"
                                     class="h-8 w-auto text-indigo-600"
@@ -96,7 +95,7 @@
                     {{template "main" .}}
                 </div>
             </main>
-            <!-- The toast container is now just a simple, empty div -->
+            <!-- The toast container is a simple empty div -->
             <div
                 id="toast-container"
                 class="fixed top-5 right-5 z-50 w-full max-w-sm space-y-2"

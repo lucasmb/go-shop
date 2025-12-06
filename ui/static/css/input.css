@@ -1,0 +1,11 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+    themes:
+        light --default,
+        dark --prefersdark;
+    root: ":root";
+    include:;
+    exclude: rootscrollgutter;
+    prefix:;
+    logs: true;
+}
