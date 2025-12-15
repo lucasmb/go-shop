@@ -9,8 +9,10 @@
     </p>
 
     <div class="mt-8 space-y-4">
-        <button id="pay-stripe" class="w-full ...">Pay with Stripe</button>
-        <button id="pay-mercado-pago" class="w-full ...">
+        <button id="pay-stripe" class="w-full btn btn-secondary">
+            Pay with Stripe
+        </button>
+        <button id="pay-mercado-pago" class="w-full btn btn-secondary">
             Pay with Mercado Pago
         </button>
         <!-- BANK DEPOSIT FORM -->
@@ -19,7 +21,11 @@
             action="/checkout/bank-deposit"
             method="POST"
         >
-            <input type="hidden" name="idempotency_key" value="" />
+            <input
+                type="hidden"
+                name="idempotency_key"
+                value="{{.IdempotencyKey}}"
+            />
             <button type="submit" class="w-full rounded-md bg-gray-600 ...">
                 Pay with Bank Deposit
             </button>
@@ -29,26 +35,9 @@
 </div>
 
 <script>
-    // Function to generate a simple UUID
-    function generateUUID() {
-        return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, (c) =>
-            (
-                c ^
-                (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))
-            ).toString(16),
-        );
-    }
-
-    // Generate a key as soon as the page loads
-    const idempotencyKey = generateUUID();
-
     document.addEventListener("DOMContentLoaded", function () {
-        // Set the key for the Bank Deposit form
-        const bankForm = document.getElementById("bank-deposit-form");
-        if (bankForm) {
-            bankForm.querySelector('input[name="idempotency_key"]').value =
-                idempotencyKey;
-        }
+        // Get the single, stable key provided by the server
+        const idempotencyKey = "{{.IdempotencyKey}}";
 
         const stripeButton = document.getElementById("pay-stripe");
         if (stripeButton) {

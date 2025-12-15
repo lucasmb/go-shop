@@ -243,3 +243,122 @@ func (m *OrderModel) UpdateStatusAndTracking(id int64, status, trackingNumber st
 	_, err := m.DB.Exec(stmt, status, trackingNumber, id)
 	return err
 }
+
+// --- Reporting Methods ---
+type SalesReport struct {
+	Date  string `json:"date"`
+	Total int    `json:"total"`
+	Count int    `json:"count"`
+}
+
+// GetDailySales returns aggregated sales data for the last 30 days.
+func (m *OrderModel) GetDailySales() ([]SalesReport, error) {
+	// SQLite syntax for date formatting
+	stmt := `
+        SELECT
+            strftime('%Y-%m-%d', created_at) as sales_date,
+            SUM(total) as total_sales,
+            COUNT(id) as order_count
+        FROM orders
+        WHERE created_at >= date('now', '-30 days')
+        GROUP BY sales_date
+        ORDER BY sales_date ASC
+    `
+	rows, err := m.DB.Query(stmt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var report []SalesReport
+	for rows.Next() {
+		var r SalesReport
+		err := rows.Scan(&r.Date, &r.Total, &r.Count)
+		if err != nil {
+			return nil, err
+		}
+		// Convert from cents
+		r.Total = r.Total / 100
+		report = append(report, r)
+	}
+	return report, nil
+}
+
+// GetAll fetches all orders, newest first, with user email for the admin view.
+func (m *OrderModel) GetAll() ([]*Order, error) {
+	stmt := `
+        SELECT o.id, o.user_id, o.status, o.payment_method, o.tracking_number, o.total, o.created_at, u.email
+        FROM orders o
+        JOIN users u ON o.user_id = u.id
+        ORDER BY o.created_at DESC
+    `
+	rows, err := m.DB.Query(stmt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []*Order
+	for rows.Next() {
+		o := &Order{}
+		err := rows.Scan(&o.ID, &o.UserID, &o.Status, &o.PaymentMethod, &o.TrackingNumber, &o.Total, &o.CreatedAt, &o.UserEmail)
+		if err != nil {
+			return nil, err
+		}
+		orders = append(orders, o)
+	}
+	return orders, nil
+}
+
+// GetByID fetches a single order by its ID. This is for admin use.
+func (m *OrderModel) GetByID(id int64) (*Order, error) {
+	stmt := `
+        SELECT o.id, o.user_id, o.status, o.payment_method, o.tracking_number, o.total, o.created_at, u.email
+        FROM orders o
+        JOIN users u ON o.user_id = u.id
+        WHERE o.id = ?
+    `
+	row := m.DB.QueryRow(stmt, id)
+	o := &Order{}
+
+	// We scan into the TrackingNumber field, which is a sql.NullString
+	err := row.Scan(&o.ID, &o.UserID, &o.Status, &o.PaymentMethod, &o.TrackingNumber, &o.Total, &o.CreatedAt, &o.UserEmail)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
+		return nil, err
+	}
+	return o, nil
+}
+
+type ProductSalesReport struct {
+	ProductName string `json:"productName"`
+	TotalSold   int    `json:"totalSold"`
+}
+
+func (m *OrderModel) GetProductSales() ([]ProductSalesReport, error) {
+	stmt := `
+        SELECT p.name, SUM(oi.quantity) as total_sold
+        FROM order_items oi
+        JOIN products p ON oi.product_id = p.id
+        GROUP BY p.id
+        ORDER BY total_sold DESC
+        LIMIT 10
+    `
+	rows, err := m.DB.Query(stmt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var report []ProductSalesReport
+	for rows.Next() {
+		var r ProductSalesReport
+		if err := rows.Scan(&r.ProductName, &r.TotalSold); err != nil {
+			return nil, err
+		}
+		report = append(report, r)
+	}
+	return report, nil
+}

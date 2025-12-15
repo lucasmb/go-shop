@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v76"
 	"github.com/stripe/stripe-go/v76/checkout/session"
 )
@@ -21,7 +22,18 @@ func (app *Application) ShowCheckout(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/cart", http.StatusSeeOther)
 		return
 	}
+
+	// Check if a key already exists in the session for this checkout.
+	idempotencyKey := app.SessionManager.GetString(r.Context(), "idempotencyKey")
+	if idempotencyKey == "" {
+		// If not, generate a new one and save it.
+		idempotencyKey = uuid.New().String()
+		app.SessionManager.Put(r.Context(), "idempotencyKey", idempotencyKey)
+	}
+	// --- END FIX ---
+	//
 	data := app.newTemplateData(r)
+	data.IdempotencyKey = idempotencyKey
 	app.render(w, r, http.StatusOK, "checkout.page.html", data)
 }
 
@@ -79,6 +91,7 @@ func (app *Application) CreateBankDepositOrder(w http.ResponseWriter, r *http.Re
 	}
 
 	app.SessionManager.Remove(r.Context(), "cart")
+	app.SessionManager.Remove(r.Context(), "idempotencyKey")
 	http.Redirect(w, r, "/order/success", http.StatusSeeOther)
 }
 
@@ -87,85 +100,124 @@ func (app *Application) CreatePaymentIntent(w http.ResponseWriter, r *http.Reque
 		Provider       string `json:"provider"`
 		IdempotencyKey string `json:"idempotency_key"`
 	}
-	// decode payload and perform idempotency check ...
+	err := json.NewDecoder(r.Body).Decode(&payload)
+	if err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	if payload.IdempotencyKey == "" {
+		app.renderJSON(w, http.StatusBadRequest, map[string]string{"error": "Idempotency key is missing."})
+		return
+	}
+
+	// --- THIS IS THE DEFINITIVE FIX ---
+	// Check if an order with this key ALREADY EXISTS.
+	existingOrder, err := app.Orders.GetByIdempotencyKey(payload.IdempotencyKey)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		app.serverError(w, r, err)
+		return
+	}
+
+	var orderID int64
 	cart := app.getCartFromSession(r)
-	user := r.Context().Value(contextKeyUser).(*d.User)
+
+	if existingOrder != nil {
+		// The order already exists. Do NOT create a new one.
+		app.Logger.Info("Duplicate payment intent request. Reusing existing order.", "key", payload.IdempotencyKey, "order_id", existingOrder.ID)
+		orderID = existingOrder.ID
+
+		// Optional: You could verify if cart total matches existing order total.
+		// If not, it's a more complex scenario (cart was changed). For now, we assume it's a simple retry.
+
+	} else {
+		// The order does not exist. This is the first attempt.
+		// Proceed with stock check and order creation.
+		ok, message, err := app.verifyStock(cart)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !ok {
+			app.renderJSON(w, http.StatusConflict, map[string]string{"error": message})
+			return
+		}
+
+		user := r.Context().Value(contextKeyUser).(*d.User)
+		orderItems := []d.OrderItem{}
+		for _, item := range cart.Items {
+			orderItems = append(orderItems, d.OrderItem{
+				ProductID: item.Product.ID,
+				Quantity:  item.Quantity,
+				Price:     item.FinalPrice, // The final price including variant modifiers
+				VariantDescription: sql.NullString{
+					String: item.VariantDescription, // The human-readable string like "Size: Large, Color: Blue"
+					Valid:  item.VariantDescription != "",
+				},
+			})
+		}
+
+		order := &d.Order{
+			UserID:         user.ID,
+			IdempotencyKey: sql.NullString{String: payload.IdempotencyKey, Valid: true},
+			Status:         "pending",
+			PaymentMethod:  payload.Provider,
+			Total:          cart.Total,
+			Items:          orderItems,
+		}
+
+		newOrderID, err := app.Orders.Insert(order)
+		if err != nil {
+			// This could be a race condition, but our DB constraint will catch it.
+			app.serverError(w, r, err)
+			return
+		}
+		orderID = newOrderID
+	}
+	// --- END FIX ---
+
+	// By this point, we have a valid orderID, either new or existing.
+	// We can now proceed to create the payment provider session.
 	baseURL := "http://localhost:4000"
-
-	// --- FINAL STOCK CHECK ---
-	ok, message, err := app.verifyStock(cart)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !ok {
-		app.renderJSON(w, http.StatusConflict, map[string]string{"error": message})
-		return
-	}
-	// --- END STOCK CHECK ---
-
-	orderItems := []d.OrderItem{}
-	for _, item := range cart.Items {
-		orderItems = append(orderItems, d.OrderItem{
-			ProductID: item.Product.ID,
-			Quantity:  item.Quantity,
-			Price:     item.FinalPrice,
-			VariantDescription: sql.NullString{
-				String: item.VariantDescription,
-				Valid:  item.VariantDescription != "",
-			},
-		})
-	}
-
-	order := &d.Order{
-		UserID:         user.ID,
-		IdempotencyKey: sql.NullString{String: payload.IdempotencyKey, Valid: true},
-		Status:         "pending",
-		PaymentMethod:  payload.Provider,
-		Total:          cart.Total,
-		Items:          orderItems,
-	}
-	orderID, err := app.Orders.Insert(order)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
 
 	if payload.Provider == "stripe" {
 		lineItems := []*stripe.CheckoutSessionLineItemParams{}
+		// Build line items from the cart...
 		for _, item := range cart.Items {
 			lineItems = append(lineItems, &stripe.CheckoutSessionLineItemParams{
 				PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
-					Currency:    stripe.String("usd"),
-					ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{Name: stripe.String(item.Product.Name)},
-					UnitAmount:  stripe.Int64(item.Product.Price),
+					// ...
+					UnitAmount: stripe.Int64(item.FinalPrice),
 				},
 				Quantity: stripe.Int64(int64(item.Quantity)),
 			})
 		}
+
 		params := &stripe.CheckoutSessionParams{
 			PaymentMethodTypes: stripe.StringSlice([]string{"card"}),
 			LineItems:          lineItems,
 			Mode:               stripe.String(string(stripe.CheckoutSessionModePayment)),
 			SuccessURL:         stripe.String(baseURL + "/order/success"),
 			CancelURL:          stripe.String(baseURL + "/cart"),
-			ClientReferenceID:  stripe.String(strconv.FormatInt(orderID, 10)),
+			// Associate the Stripe session with OUR order ID
+			ClientReferenceID: stripe.String(strconv.FormatInt(orderID, 10)),
 		}
+
 		s, err := session.New(params)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
 		}
 		app.renderJSON(w, http.StatusOK, map[string]string{"id": s.ID})
-	} else if payload.Provider == "mercadopago" {
-		// MercadoPago Logic here
-	} else {
-		http.Error(w, "Invalid provider", http.StatusBadRequest)
+		return
 	}
+	// ... other providers ...
+
+	http.Error(w, "Invalid provider", http.StatusBadRequest)
 }
 
 func (app *Application) OrderSuccess(w http.ResponseWriter, r *http.Request) {
 	app.SessionManager.Remove(r.Context(), "cart")
+	app.SessionManager.Remove(r.Context(), "idempotencyKey") // CLEAR THE KEY
 	data := app.newTemplateData(r)
 	app.render(w, r, http.StatusOK, "success.page.html", data)
 }

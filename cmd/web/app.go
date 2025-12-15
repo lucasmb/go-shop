@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"go-shop/internal/handlers"
+	"go-shop/ui"
+	"io/fs"
 	"log/slog"
 	"net/http"
 
@@ -19,7 +21,14 @@ type application struct {
 func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
 
-	fileServer := http.FileServer(http.Dir("./ui/static/"))
+	// filesystem object rooted in the 'static' directory of embedded files.
+	staticFS, err := fs.Sub(ui.Files, "static")
+	if err != nil {
+		panic(err)
+	}
+	// file server that serves files from this embedded filesystem.
+	fileServer := http.FileServer(http.FS(staticFS))
+
 	mux.Handle("/static/", http.StripPrefix("/static", fileServer))
 
 	// Middleware chains
@@ -45,8 +54,22 @@ func (app *application) routes() http.Handler {
 	mux.Handle("DELETE /cart/item/{id}", dynamic.ThenFunc(app.handlers.RemoveFromCart))
 	mux.Handle("POST /checkout/create-payment-intent", protected.ThenFunc(app.handlers.CreatePaymentIntent))
 	mux.Handle("POST /checkout/bank-deposit", protected.ThenFunc(app.handlers.CreateBankDepositOrder))
+
+	mux.Handle("GET /admin", admin.ThenFunc(app.handlers.AdminDashboard)) // Dashboard home
 	mux.Handle("GET /admin/orders", admin.ThenFunc(app.handlers.AdminShowOrders))
 	mux.Handle("POST /admin/order/update-status/{id}", admin.ThenFunc(app.handlers.AdminUpdateOrder))
+
+	// Product CRUD Routes
+	mux.Handle("GET /admin/products", admin.ThenFunc(app.handlers.AdminListProducts))
+	mux.Handle("GET /admin/products/new", admin.ThenFunc(app.handlers.AdminNewProductForm))
+	mux.Handle("POST /admin/products/new", admin.ThenFunc(app.handlers.AdminCreateProduct))
+	mux.Handle("GET /admin/products/edit/{id}", admin.ThenFunc(app.handlers.AdminEditProductForm))
+	mux.Handle("POST /admin/products/edit/{id}", admin.ThenFunc(app.handlers.AdminUpdateProduct))
+	mux.Handle("DELETE /admin/products/{id}", admin.ThenFunc(app.handlers.AdminDeleteProduct))
+
+	//  API endpoint for chart data
+	mux.Handle("GET /admin/api/sales-report", admin.ThenFunc(app.handlers.APISalesReport))
+	mux.Handle("GET /admin/api/product-sales-report", admin.ThenFunc(app.handlers.APIProductSalesReport))
 
 	// The final handler is wrapped in the session manager middleware
 	return app.sessionManager.LoadAndSave(mux)

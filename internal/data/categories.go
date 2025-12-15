@@ -41,3 +41,23 @@ func (m *CategoryModel) GetAllWithCounts() ([]*CategoryFilter, error) {
 
 	return categories, nil
 }
+
+// GetAll fetches all categories from the database.
+func (m *CategoryModel) GetAll() ([]*Category, error) {
+	stmt := `SELECT id, name FROM categories ORDER BY name ASC`
+	rows, err := m.DB.Query(stmt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var categories []*Category
+	for rows.Next() {
+		c := &Category{}
+		if err := rows.Scan(&c.ID, &c.Name); err != nil {
+			return nil, err
+		}
+		categories = append(categories, c)
+	}
+	return categories, nil
+}

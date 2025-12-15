@@ -1,0 +1,185 @@
+{{define "admin"}}<!doctype html>
+<html>
+    <head>
+        <head>
+                <meta charset="UTF-8" />
+                <title>Go-HTMX Store</title>
+                <link href="/static/css/main.css" rel="stylesheet" />
+            </head>        </script>
+    </head>
+    <body data-theme="light">
+            <div class="drawer lg:drawer-open">
+                <input id="admin-drawer" type="checkbox" class="drawer-toggle" />
+                <div class="drawer-content flex flex-col bg-base-100">
+                    <!-- Navbar for mobile -->
+                    <div class="w-full navbar bg-base-300 lg:hidden">
+                        <div class="flex-none lg:hidden">
+                            <label for="admin-drawer" aria-label="open sidebar" class="btn btn-square btn-ghost">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-6 h-6 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                            </label>
+                        </div>
+                        <div class="flex-1 px-2 mx-2 font-bold">Admin Panel</div>
+                    </div>
+                    <!-- Page content here -->
+                    <main class="flex-1 p-4 md:p-8">
+                        {{template "main" .}}
+                    </main>
+                </div>
+                <div class="drawer-side">
+                    <label for="admin-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+                    <ul class="menu p-4 w-60 min-h-full bg-base-200 text-base-content">
+                        <li class="menu-title"><span>Go-Shop Admin</span></li>
+                        <li><a href="/admin">Dashboard</a></li>
+                        <li><a href="/admin/products">Products</a></li>
+                        <li><a href="/admin/orders">Orders</a></li>
+                        <div class="divider"></div>
+                        <li><a href="/">View Storefront</a></li>
+                    </ul>
+                </div>
+            </div>
+        <!-- HTMX -->
+        <script src="/static/js/htmx.min.js"></script>
+        <script
+            defer
+            src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
+        >
+        </script>
+        <script src="/static/js/chart.umd.js"></script>
+        <script>
+        function variantEditor(initialJson) {
+            return {
+                variantData: { variant_groups: [], skus: [] },
+                init() {
+                    if (initialJson && initialJson.trim() !== '') {
+                        try {
+                            this.variantData = JSON.parse(initialJson);
+                            if (!this.variantData.variant_groups) this.variantData.variant_groups = [];
+                            if (!this.variantData.skus) this.variantData.skus = [];
+                        } catch (e) { console.error('Could not parse initial variant JSON:', e); }
+                    }
+                },
+                addGroup() {
+                    this.variantData.variant_groups.push({ name: '', options: [''] });
+                },
+                removeGroup(groupIndex) {
+                    this.variantData.variant_groups.splice(groupIndex, 1);
+                    this.generateSKUs(); // Regenerate SKUs after removing a group
+                },
+                addOption(groupIndex) {
+                    this.variantData.variant_groups[groupIndex].options.push('');
+                },
+                removeOption(groupIndex, optionIndex) {
+                    this.variantData.variant_groups[groupIndex].options.splice(optionIndex, 1);
+                },
+                generateSKUs() {
+                    const cleanGroups = this.variantData.variant_groups.filter(g => g.name && g.options.some(o => o));
+                    if (cleanGroups.length === 0) {
+                        this.variantData.skus = [];
+                        return;
+                    }
+                    const combinations = this.getCombinations(cleanGroups);
+                    const newSkus = combinations.map(combo => {
+                        const existingSku = this.variantData.skus.find(s => {
+                            let match = true;
+                            if (Object.keys(s.attributes).length !== Object.keys(combo).length) return false;
+                            for(const key in combo) {
+                                if(s.attributes[key] !== combo[key]) match = false;
+                            }
+                            return match;
+                        });
+                        return existingSku || { attributes: combo, priceModifier: 0, stock: 0, image: '' };
+                    });
+                    this.variantData.skus = newSkus;
+                },
+                getCombinations(groups) {
+                    let result = [{}];
+                    for (const group of groups) {
+                        const cleanOptions = group.options.filter(o => o);
+                        if (cleanOptions.length === 0) continue;
+
+                        const newResult = [];
+                        for (const res of result) {
+                            for (const option of cleanOptions) {
+                                const newCombo = {...res};
+                                newCombo[group.name] = option;
+                                newResult.push(newCombo);
+                            }
+                        }
+                        result = newResult;
+                    }
+                    return result;
+                },
+                getFinalJSON() {
+                    if (this.variantData.variant_groups.length === 0 && this.variantData.skus.length === 0) {
+                        return ''; // Return empty string if no variants
+                    }
+                    // Clean up empty groups/options before submitting
+                    const cleanData = JSON.parse(JSON.stringify(this.variantData));
+                    cleanData.variant_groups = cleanData.variant_groups.filter(g => g.name && g.options.some(o => o));
+                    cleanData.variant_groups.forEach(g => {
+                        g.options = g.options.filter(o => o);
+                    });
+                    return JSON.stringify(cleanData, null, 2); // Pretty print for readability
+                }
+            }
+        }
+
+        function imageUploader(initialUrl) {
+            return {
+                previewUrl: initialUrl,
+                finalImageUrl: initialUrl,
+                uploading: false,
+                error: '',
+                handleFileSelect(event) {
+                    this.handleFile(event.target.files[0]);
+                },
+                handleDrop(event) {
+                    this.handleFile(event.dataTransfer.files[0]);
+                },
+                handleFile(file) {
+                    if (!file || !file.type.startsWith('image/')) return;
+
+                    this.previewUrl = URL.createObjectURL(file); // Show instant preview
+                    this.uploadFile(file);
+                },
+                uploadFile(file) {
+                    this.uploading = true;
+                    this.error = '';
+
+                    const formData = new FormData();
+                    formData.append('image', file);
+
+                    // NOTE: Add your ImgBB API key to your .env and pass it to the template
+                    // For this example, we assume it's available via a Go variable.
+                    const apiKey = 'YOUR_IMGBB_API_KEY'; // Replace with key passed from Go
+
+                    fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+                        method: 'POST',
+                        body: formData,
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.success) {
+                            this.finalImageUrl = result.data.url;
+                        } else {
+                            this.error = result.error.message || 'Upload failed.';
+                        }
+                    })
+                    .catch(err => {
+                        this.error = 'An network error occurred.';
+                    })
+                    .finally(() => {
+                        this.uploading = false;
+                    });
+                },
+                clearImage() {
+                    this.previewUrl = '';
+                    this.finalImageUrl = '';
+                }
+            }
+        }
+        </script>
+
+    </body>
+</html>
+{{end}}

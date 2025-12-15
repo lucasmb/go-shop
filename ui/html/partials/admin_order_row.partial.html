@@ -1,0 +1,50 @@
+{{define "admin_order_row.partial.html"}}
+{{with .Order}}
+<!-- We define an Alpine.js component on the table row -->
+<tr id="order-row-{{.ID}}" x-data="{ editing: {{if .TrackingNumber.Valid}}false{{else}}true{{end}} }">
+    <td>#{{.ID}}</td>
+    <td>{{.CreatedAt.Format "Jan 02, 2006"}}</td>
+    <td>{{.UserEmail}}</td>
+    <td>{{formatPrice .Total}}</td>
+    <td>
+        <span class="badge
+            {{if eq .Status "pending"}}badge-warning{{end}}
+            {{if eq .Status "paid"}}badge-info{{end}}
+            {{if eq .Status "shipped"}}badge-success{{end}}">
+            {{.Status}}
+        </span>
+    </td>
+    <form hx-post="/admin/order/update-status/{{.ID}}"
+          hx-target="#order-row-{{.ID}}"
+          hx-swap="outerHTML">
+        <td>
+            <!-- Non-editing view -->
+            <div x-show="!editing" class="flex items-center gap-2">
+                {{if .TrackingNumber.Valid}}
+                    <a href="https://www.google.com/search?q={{.TrackingNumber.String}}" target="_blank" class="link link-primary text-sm">
+                        {{.TrackingNumber.String}}
+                    </a>
+                {{else}}
+                    <span class="text-xs text-gray-400">Not set</span>
+                {{end}}
+                <button type="button" @click="editing = true" class="btn btn-xs btn-ghost">Edit</button>
+            </div>
+
+            <!-- Editing view -->
+            <div x-show="editing">
+                <input type="text" name="tracking_number" value="{{.TrackingNumber.String}}" class="input input-bordered input-sm w-full max-w-xs" placeholder="Add tracking #">
+            </div>
+        </td>
+        <td class="text-right">
+            <select name="status" class="select select-bordered select-sm">
+                <option value="pending" {{if eq .Status "pending"}}selected{{end}}>Pending</option>
+                <option value="paid" {{if eq .Status "paid"}}selected{{end}}>Paid</option>
+                <option value="shipped" {{if eq .Status "shipped"}}selected{{end}}>Shipped</option>
+            </select>
+            <!-- When we click update, we also want to exit editing mode -->
+            <button type="submit" @click="editing = false" class="btn btn-primary btn-sm ml-2">Update</button>
+        </td>
+    </form>
+</tr>
+{{end}}
+{{end}}

@@ -34,7 +34,7 @@ func (app *Application) Home(w http.ResponseWriter, r *http.Request) {
 		app.serverError(w, r, err)
 		return
 	}
-	// --- ADD THIS LOGGING ---
+	// --- LOGGING ---
 	app.Logger.Info(
 		"Product search complete",
 		"filter_query", filters.Query,
@@ -64,7 +64,6 @@ func (app *Application) Home(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For a full page load, render the entire home page.
 	app.render(w, r, http.StatusOK, "home.page.html", dataTemplate)
 }
 

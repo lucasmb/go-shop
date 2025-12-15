@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type ProductModel struct {
@@ -213,4 +214,28 @@ func (m *ProductModel) Get(id int64) (*Product, error) {
 	}
 
 	return p, nil
+}
+
+// --- CRUD Methods ---
+
+func (m *ProductModel) Insert(p *Product) (int64, error) {
+	stmt := `INSERT INTO products (name, description, category_id, image_url, price, stock, variants_json, created_at, updated_at)
+	         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	result, err := m.DB.Exec(stmt, p.Name, p.Description, p.CategoryID, p.ImageURL, p.Price, p.Stock, p.VariantsJSON, time.Now(), time.Now())
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (m *ProductModel) Update(p *Product) error {
+	stmt := `UPDATE products SET name=?, description=?, category_id=?, image_url=?, price=?, stock=?, variants_json=?, updated_at=? WHERE id=?`
+	_, err := m.DB.Exec(stmt, p.Name, p.Description, p.CategoryID, p.ImageURL, p.Price, p.Stock, p.VariantsJSON, time.Now(), p.ID)
+	return err
+}
+
+func (m *ProductModel) Delete(id int64) error {
+	stmt := `DELETE FROM products WHERE id = ?`
+	_, err := m.DB.Exec(stmt, id)
+	return err
 }

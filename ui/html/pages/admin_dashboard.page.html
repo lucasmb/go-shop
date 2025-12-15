@@ -1,0 +1,120 @@
+{{define "main"}}
+<h1 class="text-3xl font-bold">Dashboard</h1>
+<p class="text-gray-500">Sales report for the last 30 days.</p>
+
+<div
+    class="mt-8 bg-white p-4 rounded-lg shadow"
+    x-data="salesChart()"
+    x-init="fetchData()"
+>
+    <canvas id="salesChart"></canvas>
+</div>
+
+<div class="divider mt-12"></div>
+
+<h2 class="text-2xl font-bold mt-8">Top 10 Products by Units Sold</h2>
+<div
+    class="mt-4 bg-white p-4 rounded-lg shadow"
+    x-data="productChart()"
+    x-init="fetchData()"
+>
+    <canvas id="productChart"></canvas>
+</div>
+
+<script>
+    function salesChart() {
+        return {
+            chart: null,
+            fetchData() {
+                fetch("/admin/api/sales-report")
+                    .then((response) => response.json())
+                    .then((data) => {
+                        this.renderChart(data);
+                    });
+            },
+            renderChart(data) {
+                const labels = data.map((d) => d.date);
+                const sales = data.map((d) => d.total);
+                const orders = data.map((d) => d.count);
+
+                const ctx = document
+                    .getElementById("salesChart")
+                    .getContext("2d");
+                if (this.chart) {
+                    this.chart.destroy();
+                }
+                this.chart = new Chart(ctx, {
+                    type: "bar",
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: "Total Sales (USD)",
+                                data: sales,
+                                backgroundColor: "rgba(75, 192, 192, 0.6)",
+                                borderColor: "rgba(75, 192, 192, 1)",
+                                borderWidth: 1,
+                                yAxisID: "y-sales",
+                            },
+                            {
+                                label: "Number of Orders",
+                                data: orders,
+                                type: "line",
+                                tension: 0.3,
+                                borderColor: "rgba(255, 99, 132, 1)",
+                                yAxisID: "y-orders",
+                            },
+                        ],
+                    },
+                    options: {
+                        scales: {
+                            "y-sales": {
+                                type: "linear",
+                                position: "left",
+                                beginAtZero: true,
+                            },
+                            "y-orders": {
+                                type: "linear",
+                                position: "right",
+                                beginAtZero: true,
+                                grid: { drawOnChartArea: false },
+                            },
+                        },
+                    },
+                });
+            },
+        };
+    }
+
+    function productChart() {
+        return {
+            chart: null,
+            fetchData() {
+                fetch("/admin/api/product-sales-report")
+                    .then((res) => res.json())
+                    .then((data) => this.renderChart(data));
+            },
+            renderChart(data) {
+                const labels = data.map((d) => d.productName);
+                const sales = data.map((d) => d.totalSold);
+                const ctx = document
+                    .getElementById("productChart")
+                    .getContext("2d");
+                if (this.chart) this.chart.destroy();
+                this.chart = new Chart(ctx, {
+                    type: "doughnut",
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: "Units Sold",
+                                data: sales,
+                            },
+                        ],
+                    },
+                });
+            },
+        };
+    }
+</script>
+{{end}}

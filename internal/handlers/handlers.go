@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/alexedwards/scs/v2"
 )
@@ -26,20 +27,23 @@ type Application struct {
 }
 
 type TemplateData struct {
-	Cart         *data.Cart
-	Products     []*data.Product
-	Product      *data.Product
-	InitialStock int
-	Order        *data.Order
-	CurrentPage  int
-	TotalPages   int
-	Filters      *data.SearchFilters
-	Categories   []*data.CategoryFilter
-	User         *data.User
-	Orders       []*data.Order
-	StripePubKey string
-	Flash        string
-	Type         string
+	Cart           *data.Cart
+	Products       []*data.Product
+	Product        *data.Product
+	InitialStock   int
+	Order          *data.Order
+	IdempotencyKey string
+	CurrentPage    int
+	TotalPages     int
+	Filters        *data.SearchFilters
+	Categories     []*data.CategoryFilter
+	AllCategories  []*data.Category
+	User           *data.User
+	Orders         []*data.Order
+	Form           any
+	StripePubKey   string
+	Flash          string
+	Type           string
 }
 
 // helper to populate data common to all templates.
@@ -65,7 +69,12 @@ func (app *Application) render(w http.ResponseWriter, r *http.Request, status in
 	}
 
 	buf := new(bytes.Buffer)
-	err := ts.ExecuteTemplate(buf, "base", tplData)
+	// Determine which layout to use.
+	layout := "base"
+	if strings.HasPrefix(page, "admin_") {
+		layout = "admin"
+	}
+	err := ts.ExecuteTemplate(buf, layout, tplData)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -114,7 +123,6 @@ func (app *Application) getCartFromSession(r *http.Request) *data.Cart {
 }
 
 // --- Page Handlers ---
-
 func (app *Application) OrderCancel(w http.ResponseWriter, r *http.Request) {
 	data := &TemplateData{
 		Cart: app.getCartFromSession(r),
@@ -137,7 +145,6 @@ func (app *Application) ShowMyOrders(w http.ResponseWriter, r *http.Request) {
 	app.render(w, r, http.StatusOK, "my_orders.page.html", data)
 }
 
-// AdminUpdateOrderStatus is now AdminUpdateOrder
 func (app *Application) AdminUpdateOrder(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseForm()
 	if err != nil {
@@ -155,11 +162,22 @@ func (app *Application) AdminUpdateOrder(w http.ResponseWriter, r *http.Request)
 
 	err = app.Orders.UpdateStatusAndTracking(id, status, trackingNumber)
 	if err != nil {
+		// Handle error, maybe return an error toast
 		app.serverError(w, r, err)
 		return
 	}
 
-	w.Header().Set("HX-Redirect", "/admin/orders")
+	// Fetch the updated order to render the new row
+	updatedOrder, err := app.Orders.GetByID(id)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	data := app.newTemplateData(r)
+	data.Order = updatedOrder
+	// Render just the table row partial
+	app.renderPartial(w, r, http.StatusOK, "admin_order_row.partial.html", "admin_order_row.partial.html", data)
 }
 
 func (app *Application) ShowOrderDetail(w http.ResponseWriter, r *http.Request) {

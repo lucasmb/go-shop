@@ -1,44 +1,26 @@
 {{define "main"}}
-<div class="px-4 sm:px-6 lg:px-8">
-    <div class="sm:flex sm:items-center">
-        <div class="sm:flex-auto">
-            <h1 class="text-2xl font-semibold leading-6 text-gray-900">Pending Orders</h1>
-            <p class="mt-2 text-sm text-gray-700">Review and update pending orders.</p>
-        </div>
-    </div>
-    <div class="mt-8 flow-root">
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-300">
-                <thead>
-                <tr>
-                    <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900">Order ID</th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">User</th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Total</th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Update</th>
-                </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-200 bg-white">
-                {{range .Orders}}
-                <tr>
-                    <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900">{{.ID}}</td>
-                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{.UserEmail}}</td>
-                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{formatPrice .Total}}</td>
-                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        <form hx-post="/admin/order/update-status/{{.ID}}" hx-target="body" class="flex items-center gap-x-2">
-                            <select name="status" class="block w-full rounded-md border-0 py-1.5 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 sm:text-sm sm:leading-6">
-                                <option value="pending" {{if eq .Status "pending"}}selected{{end}}>Pending</option>
-                                <option value="paid" {{if eq .Status "paid"}}selected{{end}}>Paid</option>
-                                <option value="shipped" {{if eq .Status "shipped"}}selected{{end}}>Shipped</option>
-                            </select>
-                            <input type="text" name="tracking_number" placeholder="Tracking #" value="{{.TrackingNumber.String}}" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
-                            <button type="submit" class="rounded bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/20">Save</button>
-                        </form>
-                    </td>
-                </tr>
-                {{end}}
-                </tbody>
-            </table>
-        </div>
-    </div>
+<div class="flex justify-between items-center">
+    <h1 class="text-3xl font-bold">All Orders</h1>
+</div>
+
+<div class="overflow-x-auto mt-8">
+    <table class="table w-full">
+        <thead>
+            <tr>
+                <th>Order ID</th>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th>Tracking #</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody hx-target="closest tr" hx-swap="outerHTML">
+            {{range .Orders}} {{/* Pass the individual order as the context to
+            the partial */}} {{template "admin_order_row.partial.html" (dict
+            "Order" .)}} {{end}}
+        </tbody>
+    </table>
 </div>
 {{end}}
