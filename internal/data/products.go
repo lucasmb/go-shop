@@ -55,7 +55,7 @@ func (f SearchFilters) URLWith(mods ...string) string {
 		key := mods[i]
 		value := mods[i+1]
 		if value == "" {
-			v.Del(key) // If value is empty, remove the parameter
+			v.Del(key)
 		} else {
 			v.Set(key, value)
 		}
@@ -76,6 +76,19 @@ func (f SearchFilters) URLWith(mods ...string) string {
 	return "/?" + v.Encode()
 }
 
+// unmarshalImages is a helper to safely unmarshal the JSON from images_json.
+func unmarshalImages(p *Product) error {
+	if p.ImagesJSON.Valid && p.ImagesJSON.String != "" {
+		err := json.Unmarshal([]byte(p.ImagesJSON.String), &p.ImageURLs)
+		if err != nil {
+			return fmt.Errorf("error unmarshaling images for product %d: %w", p.ID, err)
+		}
+	} else {
+		p.ImageURLs = []string{} // Ensure it's an empty slice, not nil
+	}
+	return nil
+}
+
 // unmarshalVariants is a helper to safely unmarshal the JSON
 func unmarshalVariants(p *Product) error {
 	if p.VariantsJSON.Valid && p.VariantsJSON.String != "" {
@@ -90,7 +103,7 @@ func unmarshalVariants(p *Product) error {
 // Search retrieves products based on a variety of filters.
 func (m *ProductModel) Search(filters SearchFilters) ([]*Product, int, error) {
 	baseQuery := `
-        SELECT p.id, p.name, p.description, p.category_id, p.image_url, p.price, p.stock, p.variants_json, p.created_at, COALESCE(c.name, '') as category_name
+        SELECT p.id, p.name, p.description, p.category_id, p.images_json, p.price, p.stock, p.variants_json, p.created_at, COALESCE(c.name, '') as category_name
         FROM products p
         LEFT JOIN categories c ON p.category_id = c.id
     `
@@ -100,7 +113,6 @@ func (m *ProductModel) Search(filters SearchFilters) ([]*Product, int, error) {
 	var args []interface{}
 
 	if filters.Query != "" {
-		// Now we can search inside the JSON text!
 		whereClauses = append(whereClauses, `(p.name LIKE ? OR p.description LIKE ? OR c.name LIKE ? OR p.variants_json LIKE ?)`)
 		searchTerm := "%" + filters.Query + "%"
 		args = append(args, searchTerm, searchTerm, searchTerm, searchTerm)
@@ -140,7 +152,6 @@ func (m *ProductModel) Search(filters SearchFilters) ([]*Product, int, error) {
 	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", filters.PageSize, (filters.Page-1)*filters.PageSize)
 
 	m.Logger.Debug("Executing product search", "count_sql", countQuery, "search_sql", baseQuery, "args", args)
-
 	var totalRecords int
 	err := m.DB.QueryRow(countQuery, args...).Scan(&totalRecords)
 	if err != nil {
@@ -162,9 +173,16 @@ func (m *ProductModel) Search(filters SearchFilters) ([]*Product, int, error) {
 	var products []*Product
 	for rows.Next() {
 		p := &Product{}
-		err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.CategoryID, &p.ImageURL, &p.Price, &p.Stock, &p.VariantsJSON, &p.CreatedAt, &p.CategoryName)
+		err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.CategoryID, &p.ImagesJSON, &p.Price, &p.Stock, &p.VariantsJSON, &p.CreatedAt, &p.CategoryName)
 		if err != nil {
 			return nil, 0, err
+		}
+
+		// Unmarshal the images JSON into the usable ImageURLs slice.
+		if err := unmarshalImages(p); err != nil {
+			m.Logger.Error("skipping product due to invalid image JSON", "product_id", p.ID, "error", err)
+			// Don't skip, just proceed with an empty ImageURLs slice
+			p.ImageURLs = []string{}
 		}
 		// Unmarshal the JSON for each product
 		if err := unmarshalVariants(p); err != nil {
@@ -193,14 +211,14 @@ func (m *ProductModel) Search(filters SearchFilters) ([]*Product, int, error) {
 // Get fetches a single product along with its variants.
 func (m *ProductModel) Get(id int64) (*Product, error) {
 	stmt := `
-        SELECT p.id, p.name, p.description, p.category_id, p.image_url, p.price, p.stock, p.variants_json, p.created_at, COALESCE(c.name, '') as category_name
+        SELECT p.id, p.name, p.description, p.category_id, p.images_json, p.price, p.stock, p.variants_json, p.created_at, COALESCE(c.name, '') as category_name
         FROM products p
         LEFT JOIN categories c ON p.category_id = c.id
         WHERE p.id = ?`
 
 	row := m.DB.QueryRow(stmt, id)
 	p := &Product{}
-	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.CategoryID, &p.ImageURL, &p.Price, &p.Stock, &p.VariantsJSON, &p.CreatedAt, &p.CategoryName)
+	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.CategoryID, &p.ImagesJSON, &p.Price, &p.Stock, &p.VariantsJSON, &p.CreatedAt, &p.CategoryName)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, sql.ErrNoRows
@@ -217,11 +235,10 @@ func (m *ProductModel) Get(id int64) (*Product, error) {
 }
 
 // --- CRUD Methods ---
-
 func (m *ProductModel) Insert(p *Product) (int64, error) {
-	stmt := `INSERT INTO products (name, description, category_id, image_url, price, stock, variants_json, created_at, updated_at)
+	stmt := `INSERT INTO products (name, description, category_id, images_json, price, stock, variants_json, created_at, updated_at)
 	         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	result, err := m.DB.Exec(stmt, p.Name, p.Description, p.CategoryID, p.ImageURL, p.Price, p.Stock, p.VariantsJSON, time.Now(), time.Now())
+	result, err := m.DB.Exec(stmt, p.Name, p.Description, p.CategoryID, p.ImagesJSON, p.Price, p.Stock, p.VariantsJSON, time.Now(), time.Now())
 	if err != nil {
 		return 0, err
 	}
@@ -229,8 +246,8 @@ func (m *ProductModel) Insert(p *Product) (int64, error) {
 }
 
 func (m *ProductModel) Update(p *Product) error {
-	stmt := `UPDATE products SET name=?, description=?, category_id=?, image_url=?, price=?, stock=?, variants_json=?, updated_at=? WHERE id=?`
-	_, err := m.DB.Exec(stmt, p.Name, p.Description, p.CategoryID, p.ImageURL, p.Price, p.Stock, p.VariantsJSON, time.Now(), p.ID)
+	stmt := `UPDATE products SET name=?, description=?, category_id=?, images_json=?, price=?, stock=?, variants_json=?, updated_at=? WHERE id=?`
+	_, err := m.DB.Exec(stmt, p.Name, p.Description, p.CategoryID, p.ImagesJSON, p.Price, p.Stock, p.VariantsJSON, time.Now(), p.ID)
 	return err
 }
 

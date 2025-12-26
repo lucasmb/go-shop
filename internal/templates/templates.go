@@ -57,6 +57,14 @@ var functions = template.FuncMap{
 	"itoa":        strconv.Itoa,
 	"multiply":    multiply,
 	"dict":        dict,
+	"import": func(path string) (interface{}, error) { // Add this generic import function
+		switch path {
+		case "strings":
+			return &strings.Builder{}, nil // Return a type from the package to make its functions available
+		default:
+			return nil, fmt.Errorf("unknown package path: %s", path)
+		}
+	},
 }
 
 func NewTemplateCache() (map[string]*template.Template, error) {

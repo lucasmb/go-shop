@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	d "go-shop/internal/data"
+	"go-shop/internal/filestore"
 	"go-shop/internal/handlers"
 	"go-shop/internal/templates"
 	"log/slog"
@@ -55,7 +56,19 @@ func main() {
 	sessionManager.Lifetime = 24 * time.Hour
 	sessionManager.Cookie.Secure = false
 
-	// This now correctly references the 'application' struct from app.go
+	// --- FILESTORE INITIALIZATION ---
+	fsConfig := filestore.Config{
+		Provider:  os.Getenv("FILESTORE_PROVIDER"),
+		LocalPath: os.Getenv("FILESTORE_LOCAL_PATH"),
+		BaseURL:   os.Getenv("FILESTORE_BASE_URL"),
+		// ... S3 configs ...
+	}
+	store, err := filestore.New(fsConfig)
+	if err != nil {
+		logger.Error("failed to create filestore", "err", err)
+		os.Exit(1)
+	}
+	// --- END ---
 	app := &application{
 		logger:         logger,
 		sessionManager: sessionManager,
@@ -67,6 +80,7 @@ func main() {
 			Categories:     &d.CategoryModel{DB: db, Logger: logger},
 			TemplateCache:  templateCache,
 			SessionManager: sessionManager,
+			Store:          store, // Inject the filestore
 			StripePubKey:   os.Getenv("STRIPE_PUBLISHABLE_KEY"),
 		},
 	}

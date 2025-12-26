@@ -46,16 +46,18 @@
         </script>
         <script src="/static/js/chart.umd.js"></script>
         <script>
+
         function variantEditor(initialJson) {
             return {
                 variantData: { variant_groups: [], skus: [] },
                 init() {
-                    if (initialJson && initialJson.trim() !== '') {
-                        try {
-                            this.variantData = JSON.parse(initialJson);
-                            if (!this.variantData.variant_groups) this.variantData.variant_groups = [];
-                            if (!this.variantData.skus) this.variantData.skus = [];
-                        } catch (e) { console.error('Could not parse initial variant JSON:', e); }
+                    try {
+                                  this.variantData = JSON.parse(initialJson);
+                                  if (!this.variantData.variant_groups) this.variantData.variant_groups = [];
+                                  if (!this.variantData.skus) this.variantData.skus = [];
+                    } catch (e) {
+                                  console.error('Could not parse initial variant JSON:', e);
+                                  this.variantData = { variant_groups: [], skus: [] };
                     }
                 },
                 addGroup() {
@@ -63,7 +65,7 @@
                 },
                 removeGroup(groupIndex) {
                     this.variantData.variant_groups.splice(groupIndex, 1);
-                    this.generateSKUs(); // Regenerate SKUs after removing a group
+                    this.generateSKUs();
                 },
                 addOption(groupIndex) {
                     this.variantData.variant_groups[groupIndex].options.push('');
@@ -72,18 +74,19 @@
                     this.variantData.variant_groups[groupIndex].options.splice(optionIndex, 1);
                 },
                 generateSKUs() {
-                    const cleanGroups = this.variantData.variant_groups.filter(g => g.name && g.options.some(o => o));
+                    const cleanGroups = this.variantData.variant_groups.filter(g => g.name && g.options.some(o => o && o.trim() !== ''));
                     if (cleanGroups.length === 0) {
                         this.variantData.skus = [];
                         return;
                     }
                     const combinations = this.getCombinations(cleanGroups);
                     const newSkus = combinations.map(combo => {
-                        const existingSku = this.variantData.skus.find(s => {
+                        const existingSku = (this.variantData.skus || []).find(s => {
+                            if (!s.attributes) return false;
                             let match = true;
                             if (Object.keys(s.attributes).length !== Object.keys(combo).length) return false;
-                            for(const key in combo) {
-                                if(s.attributes[key] !== combo[key]) match = false;
+                            for (const key in combo) {
+                                if (s.attributes[key] !== combo[key]) match = false;
                             }
                             return match;
                         });
@@ -94,13 +97,13 @@
                 getCombinations(groups) {
                     let result = [{}];
                     for (const group of groups) {
-                        const cleanOptions = group.options.filter(o => o);
+                        const cleanOptions = group.options.filter(o => o && o.trim() !== '');
                         if (cleanOptions.length === 0) continue;
 
                         const newResult = [];
                         for (const res of result) {
                             for (const option of cleanOptions) {
-                                const newCombo = {...res};
+                                const newCombo = { ...res };
                                 newCombo[group.name] = option;
                                 newResult.push(newCombo);
                             }
@@ -110,22 +113,116 @@
                     return result;
                 },
                 getFinalJSON() {
-                    if (this.variantData.variant_groups.length === 0 && this.variantData.skus.length === 0) {
-                        return ''; // Return empty string if no variants
+                    if ((!this.variantData.variant_groups || this.variantData.variant_groups.length === 0) &&
+                        (!this.variantData.skus || this.variantData.skus.length === 0)) {
+                        return ''; // Return empty string for form submission if no variants.
                     }
-                    // Clean up empty groups/options before submitting
                     const cleanData = JSON.parse(JSON.stringify(this.variantData));
                     cleanData.variant_groups = cleanData.variant_groups.filter(g => g.name && g.options.some(o => o));
                     cleanData.variant_groups.forEach(g => {
                         g.options = g.options.filter(o => o);
                     });
-                    return JSON.stringify(cleanData, null, 2); // Pretty print for readability
+                    if (cleanData.variant_groups.length === 0) {
+                        return '';
+                    }
+                    return JSON.stringify(cleanData, null, 2);
                 }
             }
         }
 
-        function imageUploader(initialUrl) {
+        function multiImageUploader(initialJson, csrfToken) {
             return {
+                images: [],
+                uploading: false,
+                uploadProgress: '',
+                error: '',
+                csrfToken: csrfToken,
+
+                init() {
+                    if (initialJson && initialJson.trim() !== '') {
+                        try {
+                            this.images = JSON.parse(initialJson);
+                        } catch (e) {
+                            console.error('Could not parse initial image JSON:', e);
+                            this.images = [];
+                        }
+                    }
+                },
+
+                handleFileSelect(event) {
+                    this.handleFiles(event.target.files);
+                },
+
+                handleDrop(event) {
+                    this.handleFiles(event.dataTransfer.files);
+                },
+
+                handleFiles(files) {
+                    this.uploading = true;
+                    this.error = '';
+
+                    // Filter for image files only
+                    const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+                    if (imageFiles.length === 0) {
+                        this.uploading = false;
+                        return;
+                    }
+
+                    const uploads = imageFiles.map((file, index) => {
+                        this.uploadProgress = `Uploading image ${index + 1} of ${imageFiles.length}...`;
+                        const formData = new FormData();
+                        formData.append('image', file);
+
+                        return fetch('/admin/api/upload-image', {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRF-Token': this.csrfToken
+                            },
+                            body: formData,
+                        }).then(response => {
+                            if (!response.ok) {
+                                return response.json().then(err => Promise.reject(err));
+                            }
+                            return response.json();
+                        });
+                    });
+
+                    Promise.all(uploads)
+                        .then(results => {
+                            results.forEach(result => {
+                                if (result.url) {
+                                    this.images.push(result.url);
+                                }
+                            });
+                        })
+                        .catch(err => {
+                            this.error = err.error || 'An upload failed. Please try again.';
+                        })
+                        .finally(() => {
+                            this.uploading = false;
+                            this.uploadProgress = '';
+                        });
+                },
+
+                removeImage(index) {
+                    this.images.splice(index, 1);
+                },
+
+                moveUp(index) {
+                    if (index === 0) return;
+                    [this.images[index - 1], this.images[index]] = [this.images[index], this.images[index - 1]];
+                },
+
+                moveDown(index) {
+                    if (index === this.images.length - 1) return;
+                    [this.images[index], this.images[index + 1]] = [this.images[index + 1], this.images[index]];
+                }
+            }
+        }
+
+        function imageUploader(initialUrl, csrfToken) {
+            return {
+                csrfToken: csrfToken,
                 previewUrl: initialUrl,
                 finalImageUrl: initialUrl,
                 uploading: false,
@@ -145,32 +242,28 @@
                 uploadFile(file) {
                     this.uploading = true;
                     this.error = '';
-
                     const formData = new FormData();
-                    formData.append('image', file);
+                     formData.append('image', file);
 
-                    // NOTE: Add your ImgBB API key to your .env and pass it to the template
-                    // For this example, we assume it's available via a Go variable.
-                    const apiKey = 'YOUR_IMGBB_API_KEY'; // Replace with key passed from Go
-
-                    fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
-                        method: 'POST',
-                        body: formData,
-                    })
-                    .then(response => response.json())
-                    .then(result => {
-                        if (result.success) {
-                            this.finalImageUrl = result.data.url;
-                        } else {
-                            this.error = result.error.message || 'Upload failed.';
-                        }
-                    })
-                    .catch(err => {
-                        this.error = 'An network error occurred.';
-                    })
-                    .finally(() => {
-                        this.uploading = false;
-                    });
+                     // Fetch to our OWN backend endpoint
+                     fetch('/admin/api/upload-image', {
+                                  method: 'POST',
+                                  body: formData,
+                              })
+                              .then(response => response.json())
+                              .then(result => {
+                                  if (result.url) {
+                                      this.images.push(result.url);
+                                  } else {
+                                      this.error = result.error || 'Upload failed.';
+                                  }
+                              })
+                              .catch(err => {
+                                  this.error = 'An network error occurred.';
+                              })
+                              .finally(() => {
+                                  this.uploading = false;
+                              });
                 },
                 clearImage() {
                     this.previewUrl = '';

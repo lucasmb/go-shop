@@ -7,8 +7,10 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/alexedwards/scs/v2"
+	"github.com/justinas/nosurf"
 )
 
 type application struct {
@@ -30,6 +32,9 @@ func (app *application) routes() http.Handler {
 	fileServer := http.FileServer(http.FS(staticFS))
 
 	mux.Handle("/static/", http.StripPrefix("/static", fileServer))
+	// Serve uploaded media files
+	mediaFS := http.FileServer(http.Dir(os.Getenv("FILESTORE_LOCAL_PATH")))
+	mux.Handle("/media/", http.StripPrefix("/media", mediaFS))
 
 	// Middleware chains
 	dynamic := handlers.NewChain(app.handlers.PopulateUser)
@@ -61,18 +66,38 @@ func (app *application) routes() http.Handler {
 
 	// Product CRUD Routes
 	mux.Handle("GET /admin/products", admin.ThenFunc(app.handlers.AdminListProducts))
-	mux.Handle("GET /admin/products/new", admin.ThenFunc(app.handlers.AdminNewProductForm))
-	mux.Handle("POST /admin/products/new", admin.ThenFunc(app.handlers.AdminCreateProduct))
-	mux.Handle("GET /admin/products/edit/{id}", admin.ThenFunc(app.handlers.AdminEditProductForm))
-	mux.Handle("POST /admin/products/edit/{id}", admin.ThenFunc(app.handlers.AdminUpdateProduct))
+	mux.Handle("GET /admin/products/new", admin.ThenFunc(app.handlers.AdminProductCreate))
+	mux.Handle("POST /admin/products", admin.ThenFunc(app.handlers.AdminProductCreate))
+	mux.Handle("GET /admin/products/{id}", admin.ThenFunc(app.handlers.AdminProductEdit))
+	mux.Handle("PUT /admin/products/{id}", admin.ThenFunc(app.handlers.AdminProductEdit))
 	mux.Handle("DELETE /admin/products/{id}", admin.ThenFunc(app.handlers.AdminDeleteProduct))
+	mux.Handle("POST /admin/products/form/add-group", admin.ThenFunc(app.handlers.AdminAddVariantGroup))
+	mux.Handle("POST /admin/products/form/generate-skus", admin.ThenFunc(app.handlers.AdminGenerateSKUs))
 
 	//  API endpoint for chart data
+	mux.Handle("POST /admin/api/upload-image", admin.ThenFunc(app.handlers.APIUploadImage))
 	mux.Handle("GET /admin/api/sales-report", admin.ThenFunc(app.handlers.APISalesReport))
 	mux.Handle("GET /admin/api/product-sales-report", admin.ThenFunc(app.handlers.APIProductSalesReport))
 
-	// The final handler is wrapped in the session manager middleware
-	return app.sessionManager.LoadAndSave(mux)
+	// 1. Create the nosurf middleware, wrapping our main router (mux)
+	csrfHandler := nosurf.New(mux)
+	csrfHandler.SetBaseCookie(http.Cookie{
+		HttpOnly: true,
+		Path:     "/",
+		Secure:   false, // Set to true in production with HTTPS
+	})
+
+	csrfHandler.SetFailureHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		app.logger.Error("!!!!!! CSRF FAILURE DETECTED !!!!!!", "path", r.URL.Path, "reason", nosurf.Reason(r))
+		http.Error(w, nosurf.Reason(r).Error(), http.StatusBadRequest)
+	}))
+
+	// 2. Wrap the CSRF handler with our session manager.
+	// session must load before CSRF can work.
+	finalHandler := app.sessionManager.LoadAndSave(csrfHandler)
+
+	// 3. Return the final, fully wrapped handler.
+	return finalHandler
 }
 
 // We can also move the server startup logic into a method for clarity.

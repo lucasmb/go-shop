@@ -1,0 +1,11 @@
+{{define "admin_variant_option.partial.html"}}
+<div class="flex items-center gap-2">
+    <input
+        type="text"
+        name="option_value_{{.GroupIndex}}_{{.OptionIndex}}"
+        value="{{.Option}}"
+        placeholder="Option Value (e.g., Large)"
+        class="input input-sm input-bordered grow"
+    />
+</div>
+{{end}}

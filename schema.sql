@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS products (
     name TEXT NOT NULL,
     description TEXT NOT NULL,
     category_id INTEGER,
-    image_url TEXT NOT NULL,
+    images_json TEXT,
     price INTEGER NOT NULL,      -- Base price in cents
     stock INTEGER NOT NULL,      -- Base stock for products without variants
     variants_json TEXT,          -- A TEXT column to hold a JSON array of variants

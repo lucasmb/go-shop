@@ -7,3 +7,5 @@ seed.sql
 TODO.txt
 
 node_modules
+uploads
+ui/static/css/main.css

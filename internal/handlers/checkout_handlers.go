@@ -30,7 +30,6 @@ func (app *Application) ShowCheckout(w http.ResponseWriter, r *http.Request) {
 		idempotencyKey = uuid.New().String()
 		app.SessionManager.Put(r.Context(), "idempotencyKey", idempotencyKey)
 	}
-	// --- END FIX ---
 	//
 	data := app.newTemplateData(r)
 	data.IdempotencyKey = idempotencyKey
@@ -45,54 +44,73 @@ func (app *Application) CreateBankDepositOrder(w http.ResponseWriter, r *http.Re
 	}
 	idempotencyKey := r.PostForm.Get("idempotency_key")
 	// ... idempotency check from before ...
+	existingOrder, err := app.Orders.GetByIdempotencyKey(idempotencyKey)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		app.serverError(w, r, err)
+		return
+	}
 
+	var orderID int64
 	cart := app.getCartFromSession(r)
 	user := r.Context().Value(contextKeyUser).(*d.User)
 
-	// --- ADD FINAL STOCK CHECK ---
-	ok, message, err := app.verifyStock(cart)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !ok {
-		app.SessionManager.Put(r.Context(), "flash", message)
-		http.Redirect(w, r, "/cart", http.StatusSeeOther)
-		return
-	}
-	// --- END STOCK CHECK ---
+	if existingOrder != nil {
+		// The order already exists. Do NOT create a new one.
+		app.Logger.Info("Duplicate payment intent request. Reusing existing order.", "key", idempotencyKey, "order_id", existingOrder.ID)
+		orderID = existingOrder.ID
 
-	orderItems := []d.OrderItem{}
-	for _, item := range cart.Items {
-		orderItems = append(orderItems, d.OrderItem{
-			ProductID: item.Product.ID,
-			Quantity:  item.Quantity,
-			Price:     item.FinalPrice, // Use the final price from the cart
-			VariantDescription: sql.NullString{ // Use the description from the cart
-				String: item.VariantDescription,
-				Valid:  item.VariantDescription != "",
-			},
-		})
-	}
+		// Optional: You could verify if cart total matches existing order total.
+		// If not, it's a more complex scenario (cart was changed). For now, we assume it's a simple retry.
 
-	order := &d.Order{
-		UserID:         user.ID,
-		IdempotencyKey: sql.NullString{String: idempotencyKey, Valid: true},
-		Status:         "pending",
-		PaymentMethod:  "Bank Deposit",
-		Total:          cart.Total,
-		Items:          orderItems,
-	}
+	} else {
+		// --- ADD FINAL STOCK CHECK ---
+		ok, message, err := app.verifyStock(cart)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !ok {
+			app.SessionManager.Put(r.Context(), "flash", message)
+			http.Redirect(w, r, "/cart", http.StatusSeeOther)
+			return
+		}
+		// --- END STOCK CHECK ---
 
-	_, err = app.Orders.Insert(order)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
+		orderItems := []d.OrderItem{}
+		for _, item := range cart.Items {
+			orderItems = append(orderItems, d.OrderItem{
+				ProductID: item.Product.ID,
+				Quantity:  item.Quantity,
+				Price:     item.FinalPrice, // Use the final price from the cart
+				VariantDescription: sql.NullString{ // Use the description from the cart
+					String: item.VariantDescription,
+					Valid:  item.VariantDescription != "",
+				},
+			})
+		}
 
-	app.SessionManager.Remove(r.Context(), "cart")
-	app.SessionManager.Remove(r.Context(), "idempotencyKey")
-	http.Redirect(w, r, "/order/success", http.StatusSeeOther)
+		order := &d.Order{
+			UserID:         user.ID,
+			IdempotencyKey: sql.NullString{String: idempotencyKey, Valid: true},
+			Status:         "pending",
+			PaymentMethod:  "Bank Deposit",
+			Total:          cart.Total,
+			Items:          orderItems,
+		}
+
+		newOrderID, err := app.Orders.Insert(order)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		orderID = newOrderID
+
+		app.Logger.Info("New order.", "order_id", orderID)
+
+		app.SessionManager.Remove(r.Context(), "cart")
+		app.SessionManager.Remove(r.Context(), "idempotencyKey")
+		http.Redirect(w, r, "/order/success", http.StatusSeeOther)
+	}
 }
 
 func (app *Application) CreatePaymentIntent(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +128,6 @@ func (app *Application) CreatePaymentIntent(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// --- THIS IS THE DEFINITIVE FIX ---
 	// Check if an order with this key ALREADY EXISTS.
 	existingOrder, err := app.Orders.GetByIdempotencyKey(payload.IdempotencyKey)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {

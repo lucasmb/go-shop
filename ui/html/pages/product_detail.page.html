@@ -1,90 +1,167 @@
 {{define "main"}}
 <div class="bg-white">
-    <!--
-      Alpine.js Component State:
-      - productData: The raw JSON string from Go. We parse it once in init().
-      - basePrice: The product's base price in cents.
-      - selectedOptions: An object to hold the user's current selections, e.g., {Size: 'Medium', Color: 'Blue'}.
-      - currentSKU: The single SKU object that matches the current selection. Null if no match.
-    -->
     <div
         class="pt-6"
         x-data="{
-             productData: null,
-             basePrice: {{.Product.Price}},
-             selectedOptions: {},
-             currentSKU: null,
+                    productData: null,
+                    basePrice: {{.Product.Price}},
+                    selectedOptions: {},
+                    currentSKU: null,
+                    selectedImage: '{{.Product.FeaturedImageURL | js}}',
+                    optionAvailability: {},
+                    init() {
+                        /* Safely parse productData */
+                        const rawJson = '{{.Product.VariantsJSON.String | js}}';
+                        if (rawJson && rawJson.trim() !== '' && rawJson.trim() !== 'null') {
+                            try { this.productData = JSON.parse(rawJson); }
+                            catch (e) { console.error('Could not parse variant JSON:', e); }
+                        } else {
+                            this.productData = { variant_groups: [], skus: [] }; // Ensure it's an object
+                        }
 
-             /* init() is the entry point. It runs once when the component is loaded. */
-             init() {
-                 try {
-                    const rawJson = '{{.Product.VariantsJSON.String | js}}';
-                    if (rawJson) {
-                         this.productData = JSON.parse(rawJson);
+                        /* Initialize selectedOptions with the first option of each group */
+                        if (this.productData.variant_groups) {
+                            this.productData.variant_groups.forEach(group => {
+                                if (group.options && group.options.length > 0) {
+                                   this.selectedOptions[group.name] = group.options[0];
+                                }
+                            });
+                        }
+
+                        /* Find the initial SKU and set initial stock/image */
+                        this.updateCurrentSKU();
+                    },
+
+                    /* This is the core logic engine: it finds the SKU and updates state */
+                    updateCurrentSKU() {
+                        let sku = null;
+                        if (this.productData && this.productData.skus) {
+                            sku = this.productData.skus.find(s => {
+                                let match = true;
+                                // Check if all user selections match the SKU's attributes
+                                for (const key in this.selectedOptions) {
+                                    if (s.attributes[key] !== this.selectedOptions[key]) {
+                                        match = false;
+                                        break;
+                                    }
+                                }
+                                // Also ensure attribute keys and count match
+                                return match && Object.keys(s.attributes).length === Object.keys(this.selectedOptions).length;
+                            });
+                        }
+                        this.currentSKU = sku; // Set the found SKU (or null)
+                    },
+
+                    updateOptionAvailability() {
+                                   if (!this.productData || !this.productData.variant_groups) return;
+
+                                   this.productData.variant_groups.forEach(group => {
+                                       group.options.forEach(option => {
+                                           const tempSelection = { ...this.selectedOptions, [group.name]: option };
+                                           const isAvailable = this.productData.skus.some(sku => {
+                                               let match = true;
+                                               for (const key in tempSelection) {
+                                                   if (sku.attributes[key] !== tempSelection[key]) {
+                                                       match = false;
+                                                       break;
+                                                   }
+                                               }
+                                               return match && sku.stock > 0;
+                                           });
+                                           this.optionAvailability[group.name + '-' + option] = isAvailable;
+                                       });
+                                   });
+                    },
+
+                    /* Computed properties derive their values from the core state */
+                    get finalPrice() {
+                        let totalModifier = 0;
+                        if (this.selectedOptions && this.currentSKU) {
+                           // Add modifier based on selected options if currentSKU is found
+                           for (const groupName in this.selectedOptions) {
+                               // Find the corresponding option in the selected SKU
+                               if (this.currentSKU.attributes[groupName]) {
+                                    // Find the matching SKU option to get its modifier
+                                   const matchingOption = this.currentSKU.options.find(opt => opt.value === this.selectedOptions[groupName]);
+                                   if (matchingOption) {
+                                       totalModifier += matchingOption.priceModifier || 0;
+                                   }
+                               }
+                           }
+                        }
+                        return this.basePrice + totalModifier;
+                    },
+
+                    get finalStock() {
+                        // Return stock from SKU if found, otherwise use base product stock.
+                        return this.currentSKU ? this.currentSKU.stock : {{.Product.Stock}};
+                    },
+                    get finalImage() {
+                                     if (this.currentSKU && this.currentSKU.image) {
+                                         return this.currentSKU.image;
+                                     }
+                                     // Fallback to the selected thumbnail, which defaults to the featured image.
+                                     return this.selectedImage;
                     }
-                } catch (e) {
-                                   this.productData = null;
-                                   console.error('Failed to parse variant JSON:', e);
-                 }
-
-                 // Initialize selectedOptions with the first option of each group
-                 if (this.productData && this.productData.variant_groups) {
-                     this.productData.variant_groups.forEach(group => {
-                         this.selectedOptions[group.name] = group.options[0];
-                     });
-                 }
-
-                 // Perform the first update to find the initial SKU
-                 this.updateCurrentSKU();
-             },
-
-             /* updateCurrentSKU() is the core logic engine. It finds the matching SKU. */
-             updateCurrentSKU() {
-                 // Fallback for products with no variants
-                 if (!this.productData || !this.productData.skus) {
-                     this.currentSKU = { stock: {{.Product.Stock}}, priceModifier: 0, image: '{{.Product.ImageURL}}' };
-                     return;
-                 }
-
-                 // Find the SKU where all attributes match the user's selectedOptions
-                 this.currentSKU = this.productData.skus.find(sku => {
-                     let match = true;
-                     for (const key in this.selectedOptions) {
-                         if (sku.attributes[key] !== this.selectedOptions[key]) {
-                             match = false;
-                             break;
-                         }
-                     }
-                     return match;
-                 }) || null; // If no SKU matches (e.g., combo not for sale), set to null
-             },
-
-             /* Computed properties derive their values from the core state. */
-             get finalPrice() {
-                 return this.basePrice + (this.currentSKU ? this.currentSKU.priceModifier : 0);
-             },
-             get finalStock() {
-                 // If a combination is invalid (no SKU), it's out of stock.
-                 return this.currentSKU ? this.currentSKU.stock : 0;
-             },
-             get finalImage() {
-                 return this.currentSKU && this.currentSKU.image ? this.currentSKU.image : '{{.Product.ImageURL}}';
-             }
-         }"
+                }"
     >
         <div
             class="mx-auto max-w-2xl px-4 pb-16 sm:px-6 lg:grid lg:max-w-7xl lg:grid-cols-2 lg:grid-rows-[auto,auto,1fr] lg:gap-x-8 lg:px-8 lg:pb-24"
         >
-            <!-- Product Image -->
-            <div class="lg:col-span-1 lg:border-r lg:border-gray-200 lg:pr-8">
-                <img
-                    :src="finalImage"
-                    alt="{{.Product.Name}}"
-                    class="h-full w-full object-cover object-center rounded-lg"
-                />
+            <!-- Image gallery -->
+            <div class="lg:col-span-1">
+                <div
+                    class="aspect-h-1 aspect-w-1 w-full overflow-hidden rounded-lg"
+                >
+                    <!-- Main image bound to finalImage -->
+                    <img
+                        :src="finalImage"
+                        alt="{{.Product.Name}}"
+                        class="h-full w-full object-cover object-center"
+                    />
+                </div>
+
+                <!-- Thumbnail Grid -->
+                <!-- Show thumbnails only if there are images available -->
+                <div
+                    class="mt-4 grid grid-cols-5 gap-4"
+                    x-show="productData && productData.skus"
+                >
+                    <!-- If product has variants, show the variant images -->
+                    <template x-if="currentSKU && currentSKU.image">
+                        <button
+                            @click="selectedImage = currentSKU.image"
+                            class="aspect-h-1 aspect-w-1 w-full rounded-md overflow-hidden"
+                            :class="{'ring-2 ring-offset-2 ring-indigo-500': selectedImage === currentSKU.image}"
+                        >
+                            <img
+                                :src="currentSKU.image"
+                                alt="Selected Variant Image"
+                                class="h-full w-full object-cover object-center"
+                            />
+                        </button>
+                    </template>
+                    <!-- Show base product images -->
+                    <template
+                        x-for="(image, index) in {{.Product.ImageURLs | js}}"
+                        :key="index"
+                    >
+                        <button
+                            @click="selectedImage = image"
+                            :class="{'ring-2 ring-offset-2 ring-indigo-500': selectedImage === image}"
+                            class="aspect-h-1 aspect-w-1 w-full rounded-md overflow-hidden"
+                        >
+                            <img
+                                :src="image"
+                                alt="Product Image Thumbnail"
+                                class="h-full w-full object-cover object-center"
+                            />
+                        </button>
+                    </template>
+                </div>
             </div>
 
-            <!-- Product Info -->
+            <!-- Product info (right column) -->
             <div class="mt-4 lg:row-span-3 lg:mt-0">
                 <h1
                     class="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl"
@@ -115,16 +192,35 @@
                 <form
                     class="mt-10"
                     hx-post="/cart/add/{{.Product.ID}}"
+                    hx-encoding="application/x-www-form-urlencoded"
                     hx-swap="none"
                 >
+                    <input
+                        type="hidden"
+                        name="csrf_token"
+                        value="{{.CSRFToken}}"
+                    />
+
+                    <!-- Hidden inputs for selected variants -->
+                    <template
+                        x-for="(value, key) in selectedOptions"
+                        :key="key"
+                    >
+                        <input
+                            type="hidden"
+                            :name="'variant_' + key"
+                            :value="value"
+                        />
+                    </template>
+
                     <!-- Variants Section -->
                     <template x-if="productData && productData.variant_groups">
                         <div class="space-y-10">
                             <template
-                                x-for="group in productData.variant_groups"
-                                :key="group.name"
+                                x-for="(group, groupIndex) in productData.variant_groups"
+                                :key="groupIndex"
                             >
-                                <div>
+                                <div class="mt-10">
                                     <div
                                         class="flex items-center justify-between"
                                     >
@@ -138,8 +234,8 @@
                                         class="grid grid-cols-4 gap-4 sm:grid-cols-8 lg:grid-cols-4 mt-4"
                                     >
                                         <template
-                                            x-for="option in group.options"
-                                            :key="option"
+                                            x-for="(option, optionIndex) in group.options"
+                                            :key="optionIndex"
                                         >
                                             <div>
                                                 <input
@@ -151,11 +247,16 @@
                                                     @change="updateCurrentSKU()"
                                                     class="sr-only"
                                                 />
+                                                <!-- Instead, we can simply disable based on the finalStock of the *current* selection -->
+                                                <!-- A more advanced version would check each option's availability, but this is simpler -->
                                                 <label
                                                     :for="'variant-' + group.name + '-' + option"
                                                     class="group relative flex items-center justify-center rounded-md border py-3 px-4 text-sm font-medium uppercase hover:bg-gray-50 focus:outline-none sm:flex-1 sm:py-6 cursor-pointer bg-white text-gray-900 shadow-sm"
-                                                    x-text="option"
+                                                    :class="{ 'opacity-25 cursor-not-allowed': !optionAvailability[group.name + '-' + option] }"
                                                 >
+                                                    <span
+                                                        x-text="option"
+                                                    ></span>
                                                 </label>
                                             </div>
                                         </template>
@@ -167,22 +268,23 @@
 
                     <!-- Stock Alert and Add to Cart Button -->
                     <div class="mt-6">
-                        <template x-if="finalStock > 0 && finalStock <= 10"
-                            ><p class="text-sm font-medium text-orange-600">
+                        <template x-if="finalStock > 0 && finalStock <= 10">
+                            <p class="text-sm font-medium text-orange-600">
                                 Just a few left!
-                            </p></template
-                        >
-                        <template x-if="finalStock <= 0"
-                            ><p class="text-sm font-medium text-red-600">
+                            </p>
+                        </template>
+                        <template x-if="finalStock <= 0">
+                            <p class="text-sm font-medium text-red-600">
                                 Out of stock
-                            </p></template
-                        >
+                            </p>
+                        </template>
                     </div>
 
                     <button
                         type="submit"
+                        id="add-to-cart-button"
                         :disabled="finalStock <= 0"
-                        class="mt-4 flex w-full items-center justify-center rounded-md border border-transparent bg-indigo-600 px-8 py-3 text-base font-medium text-white hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        class="mt-4 flex w-full items-center justify-center rounded-md border border-transparent bg-indigo-600 px-8 py-3 text-base font-medium text-white hover:bg-indigo-700 focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
                     >
                         Add to bag
                     </button>

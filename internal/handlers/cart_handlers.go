@@ -224,16 +224,24 @@ func (app *Application) UpdateCartItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if newQuantity > finalStock {
-		toastData := map[string]string{"message": fmt.Sprintf("Only %d available of %s", finalStock, product.Name), "type": "error"}
+		toastData := map[string]string{
+			"message": fmt.Sprintf("Only %d available for %s.", finalStock, item.Product.Name),
+			"type":    "error",
+		}
 		detailJSON, _ := json.Marshal(toastData)
 
 		w.Header().Set("HX-Trigger-After-Swap", fmt.Sprintf(`{"showToast": %s}`, string(detailJSON)))
 
-		// IMPORTANT: Re-render the cart table with the OLD quantity.
-		// We still send a 200 OK because we are successfully sending a new cart table,
-		// but the trigger will show the error.
+		// Set the status code explicitly here. This is our ONE WriteHeader call.
+		w.WriteHeader(http.StatusUnprocessableEntity)
+
+		// Re-render the cart table with the OLD quantity.
+		// We pass the cart as it was BEFORE the failed update.
 		data := app.newTemplateData(r)
-		app.renderPartial(w, r, http.StatusOK, "cart_update.partial.html", "cart_update.partial.html", data)
+		// Note: newTemplateData gets the cart from the session, which hasn't been changed yet. This is correct.
+
+		// The renderPartial call will write the body but NOT another header.
+		app.render(w, r, http.StatusOK, "cart_update.partial.html", data)
 		return
 	}
 
@@ -242,7 +250,7 @@ func (app *Application) UpdateCartItem(w http.ResponseWriter, r *http.Request) {
 	app.SessionManager.Put(r.Context(), "cart", cart)
 
 	data := app.newTemplateData(r)
-	app.renderPartial(w, r, http.StatusOK, "cart_update.partial.html", "cart_update.partial.html", data)
+	app.render(w, r, http.StatusOK, "cart_update.partial.html", data)
 }
 
 func (app *Application) RemoveFromCart(w http.ResponseWriter, r *http.Request) {
@@ -259,5 +267,5 @@ func (app *Application) RemoveFromCart(w http.ResponseWriter, r *http.Request) {
 
 	data := app.newTemplateData(r)
 	// Render the combined partial that updates both the table and the icon
-	app.renderPartial(w, r, http.StatusOK, "cart_update.partial.html", "cart_update.partial.html", data)
+	app.render(w, r, http.StatusOK, "cart_update.partial.html", data)
 }

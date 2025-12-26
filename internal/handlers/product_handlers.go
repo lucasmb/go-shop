@@ -60,7 +60,7 @@ func (app *Application) Home(w http.ResponseWriter, r *http.Request) {
 	// --- HTMX Request Handling ---
 	// If the request is from HTMX, only render the product list partial.
 	if r.Header.Get("HX-Request") == "true" {
-		app.renderPartial(w, r, http.StatusOK, "product_list.partial.html", "product_list.partial.html", dataTemplate)
+		app.render(w, r, http.StatusOK, "product_list.partial.html", dataTemplate)
 		return
 	}
 
@@ -84,18 +84,24 @@ func (app *Application) ProductDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pre-calculate the initial stock for the template.
+	// Prepare a safe JSON string for Alpine, as this is still good practice.
+	variantsJsonString := product.VariantsJSON.String
+	if !product.VariantsJSON.Valid || variantsJsonString == "" {
+		variantsJsonString = `{"variant_groups":[],"skus":[]}`
+	}
+
+	// Calculate initial stock (this logic also belongs on the model, but we'll keep it here for now for a targeted fix).
 	var initialStock int
 	if product.VariantInfo.SKUs != nil && len(product.VariantInfo.SKUs) > 0 {
-		// Default to the stock of the first SKU
 		initialStock = product.VariantInfo.SKUs[0].Stock
 	} else {
-		// Fallback to the base product stock
 		initialStock = product.Stock
 	}
 
 	data := app.newTemplateData(r)
 	data.Product = product
 	data.InitialStock = initialStock
+	data.SafeVariantsJSON = variantsJsonString
+
 	app.render(w, r, http.StatusOK, "product_detail.page.html", data)
 }

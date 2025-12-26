@@ -56,14 +56,16 @@ type Product struct {
 	Name         string
 	Description  string
 	CategoryID   sql.NullInt64
-	ImageURL     string
+	CategoryName string
+	ImagesJSON   sql.NullString `json:"-"`
+	ImageURLs    []string       `json:"-"`
 	Price        int64
 	Stock        int
-	CreatedAt    time.Time
-	CategoryName string
 	VariantsJSON sql.NullString
-	VariantInfo  ProductVariantInfo `json:"-"` // The unmarshaled, usable struct
+	VariantInfo  ProductVariantInfo `json:"-"`
 	TotalStock   int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // A small struct to hold the selected option and its group context
@@ -76,14 +78,14 @@ type SelectedOption struct {
 type CartItem struct {
 	CompositeID        string
 	Product            *Product
-	VariantDescription string // Store the simple description
+	VariantDescription string
 	Quantity           int
 	FinalPrice         int64
 }
 
 // Cart represents the entire shopping cart.
 type Cart struct {
-	Items     map[string]*CartItem // Map of CompositeID to CartItem
+	Items     map[string]*CartItem
 	Total     int64
 	ItemCount int
 }
@@ -207,4 +209,13 @@ func (c *Cart) recalculate() {
 	}
 	c.Total = total
 	c.ItemCount = count
+}
+
+// FeaturedImageURL returns the primary image for the product.
+// It prioritizes the first image in the ImageURLs slice, with a safe fallback.
+func (p *Product) FeaturedImageURL() string {
+	if len(p.ImageURLs) > 0 {
+		return p.ImageURLs[0]
+	}
+	return "https://placehold.co/600x600/ccc/FFFFFF/png?text=No+Image"
 }

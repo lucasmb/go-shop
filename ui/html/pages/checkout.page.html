@@ -21,12 +21,17 @@
             action="/checkout/bank-deposit"
             method="POST"
         >
+            <!-- CSRF  -->
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+
+            <!-- IDEMPOTENCY KEY-->
             <input
                 type="hidden"
                 name="idempotency_key"
                 value="{{.IdempotencyKey}}"
             />
-            <button type="submit" class="w-full rounded-md bg-gray-600 ...">
+
+            <button type="submit" class="w-full rounded-md bg-gray-600 btn">
                 Pay with Bank Deposit
             </button>
         </form>

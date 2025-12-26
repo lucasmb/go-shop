@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"go-shop/internal/data"
+	d "go-shop/internal/data"
+	"go-shop/internal/filestore"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/alexedwards/scs/v2"
+	"github.com/justinas/nosurf"
 )
 
 type Application struct {
@@ -23,27 +26,33 @@ type Application struct {
 	Categories     *data.CategoryModel
 	TemplateCache  map[string]*template.Template
 	SessionManager *scs.SessionManager
+	Store          filestore.FileStore
 	StripePubKey   string
 }
 
 type TemplateData struct {
-	Cart           *data.Cart
-	Products       []*data.Product
-	Product        *data.Product
-	InitialStock   int
-	Order          *data.Order
-	IdempotencyKey string
-	CurrentPage    int
-	TotalPages     int
-	Filters        *data.SearchFilters
-	Categories     []*data.CategoryFilter
-	AllCategories  []*data.Category
-	User           *data.User
-	Orders         []*data.Order
-	Form           any
-	StripePubKey   string
-	Flash          string
-	Type           string
+	Cart             *data.Cart
+	Products         []*data.Product
+	Product          *data.Product
+	InitialStock     int
+	Order            *data.Order
+	IdempotencyKey   string
+	CurrentPage      int
+	TotalPages       int
+	Filters          *data.SearchFilters
+	Categories       []*data.CategoryFilter
+	AllCategories    []*data.Category
+	User             *data.User
+	Orders           []*data.Order
+	SafeVariantsJSON string
+	VariantInfo      d.ProductVariantInfo
+	VariantGroups    []VariantGroupForm
+	SKUs             []d.SKU
+	CSRFToken        string
+	Form             any
+	StripePubKey     string
+	Flash            string
+	Type             string
 }
 
 // helper to populate data common to all templates.
@@ -51,6 +60,7 @@ func (app *Application) newTemplateData(r *http.Request) *TemplateData {
 	data2 := &TemplateData{
 		Flash:        app.SessionManager.PopString(r.Context(), "flash"),
 		Cart:         app.getCartFromSession(r),
+		CSRFToken:    nosurf.Token(r),
 		StripePubKey: app.StripePubKey,
 	}
 
@@ -60,8 +70,8 @@ func (app *Application) newTemplateData(r *http.Request) *TemplateData {
 	return data2
 }
 
-// helper for rendering templates.
-func (app *Application) render(w http.ResponseWriter, r *http.Request, status int, page string, tplData *TemplateData) {
+// render is now the single source of truth for all template rendering.
+func (app *Application) render(w http.ResponseWriter, r *http.Request, status int, page string, data *TemplateData) {
 	ts, ok := app.TemplateCache[page]
 	if !ok {
 		app.serverError(w, r, fmt.Errorf("the template %s does not exist", page))
@@ -69,36 +79,26 @@ func (app *Application) render(w http.ResponseWriter, r *http.Request, status in
 	}
 
 	buf := new(bytes.Buffer)
-	// Determine which layout to use.
-	layout := "base"
+
+	// Determine the name of the template block to execute.
+	templateToExec := "base" // Default to the main storefront layout
 	if strings.HasPrefix(page, "admin_") {
-		layout = "admin"
+		templateToExec = "admin" // Use the admin layout for admin pages
 	}
-	err := ts.ExecuteTemplate(buf, layout, tplData)
+
+	// If the request is from HTMX, we don't render the layout.
+	// Instead, we render the template defined by the 'page' name itself.
+	if r.Header.Get("HX-Request") == "true" {
+		templateToExec = page
+	}
+
+	err := ts.ExecuteTemplate(buf, templateToExec, data)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	w.WriteHeader(status)
-	buf.WriteTo(w)
-}
-
-// renderPartial renders only a specific block of a template, for HTMX swaps.
-func (app *Application) renderPartial(w http.ResponseWriter, r *http.Request, status int, page, block string, tplData *TemplateData) {
-	ts, ok := app.TemplateCache[page]
-	if !ok {
-		app.serverError(w, r, fmt.Errorf("the template %s does not exist", page))
-		return
-	}
-
-	buf := new(bytes.Buffer)
-	err := ts.ExecuteTemplate(buf, block, tplData)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
+	// Only now, at the very end, do we write the status and the body.
 	w.WriteHeader(status)
 	buf.WriteTo(w)
 }
@@ -177,7 +177,7 @@ func (app *Application) AdminUpdateOrder(w http.ResponseWriter, r *http.Request)
 	data := app.newTemplateData(r)
 	data.Order = updatedOrder
 	// Render just the table row partial
-	app.renderPartial(w, r, http.StatusOK, "admin_order_row.partial.html", "admin_order_row.partial.html", data)
+	app.render(w, r, http.StatusOK, "admin_order_row.partial.html", data)
 }
 
 func (app *Application) ShowOrderDetail(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,30 @@
+{{define "admin_variant_group_form.partial.html"}}
+<div class="p-4 bg-base-200 rounded-lg">
+    <div class="flex justify-between items-center">
+        <input
+            type="text"
+            name="group_{{.GroupIndex}}_name"
+            value="{{.Group.Name}}"
+            placeholder="Group Name (e.g., Size)"
+            class="input input-sm input-bordered font-bold"
+        />
+        <button
+            type="button"
+            onclick="this.closest('div.p-4').remove()"
+            class="btn btn-sm btn-ghost text-error"
+        >
+            &times; Remove
+        </button>
+    </div>
+    <div class="pl-4 mt-2">
+        <label class="label-text">Options (comma-separated)</label>
+        <input
+            type="text"
+            name="group_{{.GroupIndex}}_options"
+            value="{{.Group.Options}}"
+            placeholder="Small, Medium, Large"
+            class="input input-sm input-bordered w-full"
+        />
+    </div>
+</div>
+{{end}}

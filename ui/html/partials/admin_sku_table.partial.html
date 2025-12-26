@@ -1,0 +1,67 @@
+{{define "admin_sku_table.partial.html"}}
+<div id="sku-table-container">
+    <h3 class="font-bold mt-6">Generated SKUs (Stock Keeping Units)</h3>
+    <p class="text-xs text-gray-500 mb-2">
+        Set the price modifier, stock, and optional image for each unique
+        combination.
+    </p>
+    <div class="overflow-x-auto">
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>Combination</th>
+                    <th>Price Modifier ($)</th>
+                    <th>Stock</th>
+                    <th>Image URL</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range $index, $sku := .SKUs}}
+                <tr>
+                    <td>
+                        {{$first := true}} {{range $key, $value :=
+                        $sku.Attributes}} {{if not $first}},
+                        {{end}}<strong>{{$key}}</strong>: {{$value}}{{$first =
+                        false}} {{end}}
+                        <!-- Hidden inputs to submit attributes -->
+                        {{range $key, $value := $sku.Attributes}}
+                        <input
+                            type="hidden"
+                            name="sku_{{$index}}_attr_{{$key}}"
+                            value="{{$value}}"
+                        />
+                        {{end}}
+                    </td>
+                    <td>
+                        <input
+                            type="number"
+                            step="0.01"
+                            name="sku_{{$index}}_price_modifier"
+                            value="{{$sku.PriceModifier}}"
+                            class="input input-xs w-24"
+                        />
+                    </td>
+                    <td>
+                        <input
+                            type="number"
+                            name="sku_{{$index}}_stock"
+                            value="{{$sku.Stock}}"
+                            class="input input-xs w-24"
+                        />
+                    </td>
+                    <td>
+                        <input
+                            type="text"
+                            name="sku_{{$index}}_image"
+                            value="{{$sku.Image}}"
+                            class="input input-xs w-full"
+                            placeholder="Optional variant image"
+                        />
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{end}}

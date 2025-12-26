@@ -1,21 +1,23 @@
-{{define "main"}} {{with .Form}}
-<!-- Scope changes to the Form struct -->
+{{define "main"}}
 <div class="max-w-4xl mx-auto" id="product-form-container">
     <h1 class="text-3xl font-bold mb-8">
-        {{if .IsEdit}}Edit Product{{else}}Create New Product{{end}}
+        {{if .Form.IsEdit}}Edit Product{{else}}Create New Product{{end}}
     </h1>
-
     <form
         class="space-y-6"
+        id="product-form"
         {{if
-        .IsEdit}}
-        hx-post="/admin/products/edit/{{.ID}}"
+        .Form.IsEdit}}
+        hx-put="/admin/products/{{.Form.ID}}"
         {{else}}
-        hx-post="/admin/products/new"
+        hx-post="/admin/products"
         {{end}}
+        hx-encoding="multipart/form-data"
+        hx-target="body"
         hx-swap="outerHTML"
-        hx-target="#product-form-container"
     >
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
+        <!-- Product Name -->
         <label class="form-control w-full">
             <div class="label">
                 <span class="label-text">Product Name</span>
@@ -23,17 +25,18 @@
             <input
                 type="text"
                 name="name"
-                value="{{.Name}}"
+                value="{{.Form.Name}}"
                 placeholder="e.g., Go & HTMX T-Shirt"
-                class="input input-bordered w-full {{if .Errors.Name}}input-error{{end}}"
+                class="input input-bordered w-full {{if .Form.Errors.Name}}input-error{{end}}"
             />
-            {{with .Errors.Name}}
+            {{with .Form.Errors.Name}}
             <div class="label">
                 <span class="label-text-alt text-error">{{.}}</span>
             </div>
             {{end}}
         </label>
 
+        <!-- Description -->
         <label class="form-control">
             <div class="label"><span class="label-text">Description</span></div>
             <textarea
@@ -41,10 +44,11 @@
                 class="textarea textarea-bordered h-24"
                 placeholder="Product details..."
             >
-{{.Description}}</textarea
+{{.Form.Description}}</textarea
             >
         </label>
 
+        <!-- Price, Stock, Category -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <label class="form-control w-full">
                 <div class="label">
@@ -54,11 +58,11 @@
                     type="number"
                     step="0.01"
                     name="price"
-                    value="{{if gt .Price 0.0}}{{.Price}}{{end}}"
+                    value="{{if gt .Form.Price 0.0}}{{.Form.Price}}{{end}}"
                     placeholder="29.99"
-                    class="input input-bordered w-full {{if .Errors.Price}}input-error{{end}}"
+                    class="input input-bordered w-full {{if .Form.Errors.Price}}input-error{{end}}"
                 />
-                {{with .Errors.Price}}
+                {{with .Form.Errors.Price}}
                 <div class="label">
                     <span class="label-text-alt text-error">{{.}}</span>
                 </div>
@@ -71,7 +75,7 @@
                 <input
                     type="number"
                     name="stock"
-                    value="{{.Stock}}"
+                    value="{{.Form.Stock}}"
                     placeholder="100"
                     class="input input-bordered w-full"
                 />
@@ -85,11 +89,11 @@
                         value="0"
                         {{if
                         not
-                        .CategoryID.Valid}}selected{{end}}
+                        .Form.CategoryID.Valid}}selected{{end}}
                     >
                         Uncategorized
                     </option>
-                    {{range $.AllCategories}}
+                    {{range .AllCategories}}
                     <option
                         value="{{.ID}}"
                         {{if
@@ -106,15 +110,16 @@
             </label>
         </div>
 
+        <!-- Image Uploader -->
         <div
-            x-data="imageUploader('{{.ImageURL | js}}')"
+            x-data="multiImageUploader('{{.Form.ImagesJSON | js}}', '{{.CSRFToken}}')"
             class="form-control w-full"
         >
             <div class="label">
-                <span class="label-text">Product Image</span>
+                <span class="label-text">Product Images</span>
             </div>
             <div
-                x-show="!previewUrl"
+                x-show="!images || images.length === 0"
                 @dragover.prevent
                 @drop.prevent="handleDrop"
                 class="flex items-center justify-center w-full"
@@ -137,163 +142,137 @@
                         @change="handleFileSelect"
                         class="hidden"
                         accept="image/*"
+                        multiple
                     />
                 </label>
             </div>
-            <div x-show="previewUrl" class="relative">
-                <img
-                    :src="previewUrl"
-                    class="w-full h-auto max-h-96 object-contain rounded-lg bg-gray-100"
-                />
-                <button
-                    type="button"
-                    @click="clearImage()"
-                    class="btn btn-sm btn-circle absolute top-2 right-2"
-                >
-                    ✕
-                </button>
-            </div>
-            <input type="hidden" name="image_url" :value="finalImageUrl" />
-            <div x-show="uploading" class="text-sm text-info">Uploading...</div>
-            <div x-show="error" x-text="error" class="text-sm text-error"></div>
-        </div>
-
-        <!-- DYNAMIC VARIANT EDITOR -->
-        <div class="divider"></div>
-        <div class="space-y-4" x-data="variantEditor('{{.VariantsJSON | js}}')">
-            <h2 class="text-xl font-bold">Variants</h2>
-            <input type="hidden" name="variants_json" :value="getFinalJSON()" />
-
-            <div class="space-y-4">
-                <template
-                    x-for="(group, groupIndex) in variantData.variant_groups"
-                    :key="groupIndex"
-                >
-                    <div class="p-4 bg-base-200 rounded-lg">
-                        <div class="flex justify-between items-center">
-                            <input
-                                type="text"
-                                x-model="group.name"
-                                placeholder="Group Name (e.g., Size)"
-                                class="input input-sm input-bordered font-bold"
-                            />
-                            <button
-                                type="button"
-                                @click="removeGroup(groupIndex)"
-                                class="btn btn-sm btn-ghost text-error"
-                            >
-                                &times; Remove Group
-                            </button>
-                        </div>
-                        <div class="pl-4 mt-2 space-y-2">
-                            <template
-                                x-for="(option, optionIndex) in group.options"
-                                :key="optionIndex"
-                            >
-                                <div class="flex items-center gap-2">
-                                    <input
-                                        type="text"
-                                        x-model="group.options[optionIndex]"
-                                        @input.debounce.500ms="generateSKUs"
-                                        placeholder="Option Value (e.g., Large)"
-                                        class="input input-sm input-bordered grow"
-                                    />
-                                    <button
-                                        type="button"
-                                        @click="removeOption(groupIndex, optionIndex)"
-                                        class="btn btn-xs btn-circle btn-ghost text-error"
-                                    >
-                                        ✕
-                                    </button>
-                                </div>
-                            </template>
-                            <button
-                                type="button"
-                                @click="addOption(groupIndex)"
-                                class="btn btn-xs btn-outline mt-2"
-                            >
-                                Add Option
-                            </button>
-                        </div>
+            <div class="space-y-2" x-show="images && images.length > 0">
+                <template x-for="(image, index) in images" :key="index">
+                    <div
+                        class="flex items-center gap-2 p-2 bg-base-200 rounded-lg"
+                    >
+                        <img
+                            :src="image"
+                            class="w-16 h-16 object-cover rounded"
+                        />
+                        <input
+                            type="text"
+                            x-model="images[index]"
+                            class="input input-sm grow"
+                        />
+                        <button
+                            type="button"
+                            @click="moveUp(index)"
+                            :disabled="index === 0"
+                            class="btn btn-xs btn-ghost"
+                        >
+                            ↑
+                        </button>
+                        <button
+                            type="button"
+                            @click="moveDown(index)"
+                            :disabled="index === images.length - 1"
+                            class="btn btn-xs btn-ghost"
+                        >
+                            ↓
+                        </button>
+                        <button
+                            type="button"
+                            @click="removeImage(index)"
+                            class="btn btn-xs btn-ghost text-error"
+                        >
+                            ✕
+                        </button>
                     </div>
                 </template>
-            </div>
-            <button
-                type="button"
-                @click="addGroup()"
-                class="btn btn-sm btn-outline"
-            >
-                Add Variant Group
-            </button>
-            <button
-                type="button"
-                @click="generateSKUs()"
-                class="btn btn-sm btn-accent ml-4"
-                :disabled="variantData.variant_groups.length === 0"
-            >
-                Generate/Update SKUs
-            </button>
-
-            <!-- SKUs Table -->
-            <div
-                class="mt-6"
-                x-show="variantData.skus && variantData.skus.length > 0"
-            >
-                <h3 class="font-bold">Generated SKUs (Stock Keeping Units)</h3>
-                <div class="overflow-x-auto">
-                    <table class="table table-sm mt-2">
-                        <thead>
-                            <tr>
-                                <th>Combination</th>
-                                <th>Price Modifier ($)</th>
-                                <th>Stock</th>
-                                <th>Image URL</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <template
-                                x-for="(sku, skuIndex) in variantData.skus"
-                                :key="skuIndex"
-                            >
-                                <tr>
-                                    <td
-                                        x-text="Object.values(sku.attributes).join(' / ')"
-                                    ></td>
-                                    <td>
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            x-model.number="sku.priceModifier"
-                                            @input="sku.priceModifier = $event.target.value * 100"
-                                            :value="sku.priceModifier / 100"
-                                            class="input input-xs w-24"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            type="number"
-                                            x-model.number="sku.stock"
-                                            class="input input-xs w-24"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            type="text"
-                                            x-model="sku.image"
-                                            class="input input-xs w-full"
-                                            placeholder="Optional variant-specific image URL"
-                                        />
-                                    </td>
-                                </tr>
-                            </template>
-                        </tbody>
-                    </table>
+                <div
+                    @dragover.prevent
+                    @drop.prevent="handleDrop"
+                    class="mt-4 flex items-center justify-center w-full"
+                >
+                    <label
+                        for="extra-dropzone-file"
+                        class="flex flex-col items-center justify-center w-full h-24 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-base-200 hover:bg-base-300"
+                    >
+                        <p class="text-sm text-gray-500">Add more images...</p>
+                        <input
+                            id="extra-dropzone-file"
+                            type="file"
+                            @change="handleFileSelect"
+                            class="hidden"
+                            accept="image/*"
+                            multiple
+                        />
+                    </label>
                 </div>
             </div>
-            {{with .Errors.VariantsJSON}}
-            <p class="text-red-500 text-xs mt-1">{{.}}</p>
-            {{end}}
+            <input
+                type="hidden"
+                name="images_json"
+                :value="JSON.stringify(images)"
+            />
+            <div x-show="uploading" class="text-sm text-info mt-2">
+                Uploading... (<span x-text="uploadProgress"></span>)
+            </div>
+            <div
+                x-show="error"
+                x-text="error"
+                class="text-sm text-error mt-2"
+            ></div>
         </div>
+
+        <div class="divider"></div>
+        <h2 class="text-xl font-bold">Variants</h2>
+
+        <!-- This is where the variant groups will be rendered or added -->
+        <div id="variant-groups-container" class="space-y-4">
+            {{range $index, $group := .VariantGroups}} {{template
+            "admin_variant_group_form.partial.html" (dict "GroupIndex" $index
+            "Group" $group)}} {{end}}
+        </div>
+
+        <!-- "Add Group" button powered by HTMX -->
+        <button
+            type="button"
+            hx-post="/admin/products/form/add-group"
+            hx-vars='{"nextIndex": document.querySelectorAll("#variant-groups-container > div").length}'
+            hx-target="#variant-groups-container"
+            hx-swap="beforeend"
+            class="btn btn-sm btn-outline"
+        >
+            + Add Variant Group
+        </button>
+
+        <div class="divider"></div>
+        <!-- SKU GENERATION SECTION -->
+        <div class="mt-4">
+            <button
+                type="button"
+                hx-post="/admin/products/form/generate-skus"
+                hx-include="closest form"
+                hx-target="#sku-table-container"
+                hx-swap="outerHTML"
+                class="btn btn-accent"
+            >
+                Generate / Update SKUs
+            </button>
+
+            <!-- This div is the target for the SKU table -->
+
+            <div id="sku-table-container" class="mt-4">
+                {{/* If editing, render the initial SKU table */}} {{if
+                .Form.VariantsJSON}} {{$variantInfo := .VariantInfo}} {{if
+                $variantInfo.SKUs}} {{template "admin_sku_table.partial.html"
+                (dict "SKUs" $variantInfo.SKUs)}} {{end}} {{end}}
+            </div>
+        </div>
+
+        <!-- This is a temporary field until we build the SKU parser on the backend -->
+        <input
+            type="hidden"
+            name="variants_json"
+            value="{{.Form.VariantsJSON}}"
+        />
 
         <div class="pt-4 flex justify-end gap-4">
             <a href="/admin/products" class="btn">Cancel</a>
@@ -302,6 +281,3 @@
     </form>
 </div>
 {{end}}
-<!-- This closes 'with .Form' -->
-{{end}}
-<!-- This closes 'define "main"' -->
